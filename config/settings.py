@@ -132,6 +132,28 @@ class Settings(BaseSettings):
         description="Directory for log files",
     )
 
+    # API
+    api_url: str = Field(
+        default="http://localhost:8000",
+        description="API server URL",
+    )
+
+    # Data refresh policy
+    stock_list_file: str = Field(
+        default="/home/ubuntu/Downloads/Stock_list.txt",
+        description="Path to the IDX stock list file used by batch ingestion",
+    )
+    daily_refresh_policy: str = Field(
+        default="Daily after market close or by midnight Asia/Jakarta",
+        description="Human-readable expectation for price data refresh cadence",
+    )
+    model_training_batch_limit: int = Field(
+        default=10,
+        ge=1,
+        le=25,
+        description="Maximum number of stock models allowed in a single manual training batch",
+    )
+
     # Logging
     log_level: str = Field(
         default="INFO",
@@ -235,6 +257,146 @@ class TimesFMSettings(BaseSettings):
     )
 
 
+class LLMSettings(BaseSettings):
+    """Settings for LLM provider configuration.
+
+    Controls which LLM provider to use, fallback behavior,
+    and daily budget limits.
+
+    Attributes:
+        default_provider: Primary LLM provider (claude or glm).
+        fallback_provider: Fallback provider if primary fails.
+        daily_budget_usd: Daily budget for LLM API calls in USD.
+        max_retries: Maximum retries per API call.
+        retry_base_delay: Base delay between retries in seconds.
+        enable_fallback: Whether to enable automatic fallback.
+        enable_cost_tracking: Whether to track API costs.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="LLM_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+    default_provider: str = Field(
+        default="claude",
+        description="Primary LLM provider (claude or glm)",
+    )
+    fallback_provider: str = Field(
+        default="glm",
+        description="Fallback LLM provider",
+    )
+    daily_budget_usd: float = Field(
+        default=10.0,
+        ge=0.0,
+        description="Daily budget for LLM API calls in USD",
+    )
+    max_retries: int = Field(
+        default=3,
+        ge=0,
+        le=10,
+        description="Maximum retries per API call",
+    )
+    retry_base_delay: float = Field(
+        default=1.0,
+        ge=0.1,
+        description="Base delay between retries in seconds",
+    )
+    enable_fallback: bool = Field(
+        default=True,
+        description="Enable automatic provider fallback",
+    )
+    enable_cost_tracking: bool = Field(
+        default=True,
+        description="Track API costs per call",
+    )
+
+
+class EmailSettings(BaseSettings):
+    """Settings for email notifications.
+
+    Attributes:
+        smtp_host: SMTP server hostname.
+        smtp_port: SMTP server port.
+        smtp_user: SMTP username.
+        smtp_password: SMTP password.
+        from_address: From email address.
+        recipients: Comma-separated list of recipient emails.
+        enabled: Whether email notifications are enabled.
+    """
+
+    model_config = SettingsConfigDict(
+        env_prefix="EMAIL_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+    smtp_host: str = Field(default="smtp.gmail.com", description="SMTP host")
+    smtp_port: int = Field(default=587, description="SMTP port")
+    smtp_user: str = Field(default="", description="SMTP username")
+    smtp_password: str = Field(default="", description="SMTP password")
+    from_address: str = Field(default="", description="From email address")
+    recipients: str = Field(default="", description="Comma-separated recipients")
+    enabled: bool = Field(default=False, description="Enable email notifications")
+
+
+class MLConfig:
+    """Configuration for Machine Learning prediction models."""
+    N_PREV = 60
+    HORIZON = 7
+    N_SPLITS = 3
+    TARGET_OOF_FRAC = 0.25
+    PATIENCE = 10
+    EPOCHS = 30
+    BATCH_SIZE = 32
+    SEEDS = [7, 21, 42]
+    RSI_PERIOD = 14
+    ADX_PERIOD = 14
+    VOL_PROXY_WIN = 20
+    TREND_REGIME_WIN = 50
+    VOL_REGIME_WIN = 20
+    EXTENDED_LAGS = [1, 2, 3, 5, 10, 20]
+    EXO_LAGS = [1, 5, 20]
+    EXO_ROLL_WINDOWS = [5, 20, 60]
+    MIN_TOTAL_ROWS = 200
+    
+    LSTM_CONFIG = {
+        'units': [64, 32],
+        'l2_reg': 1e-4,
+        'dropout': 0.2,
+        'lr': 0.001,
+        'loss_delta': 1.0
+    }
+    
+    CNN_LSTM_CONFIG = {
+        'filters': 64,
+        'kernel_size': 3,
+        'pool_size': 2,
+        'lstm_units': 64,
+        'dropout': 0.2,
+        'lr': 0.001,
+        'loss_delta': 1.0
+    }
+    
+    SVR_CONFIG = {
+        'C': 1.0,
+        'epsilon': 0.1,
+        'kernel': 'rbf'
+    }
+    
+    META_GBR_CONFIG = {
+        'n_estimators': 100,
+        'learning_rate': 0.1,
+        'max_depth': 3,
+        'random_state': 42
+    }
+
+
 # Global settings instances
 settings = Settings()
 timesfm_settings = TimesFMSettings()
+llm_settings = LLMSettings()
+email_settings = EmailSettings()

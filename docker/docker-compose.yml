@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///data/trading.db
+      - LOG_LEVEL=INFO
+      - PAPER_TRADING=true
+    env_file:
+      - ../.env
+    volumes:
+      - trading_data:/app/data
+      - trading_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["python", "scripts/daily_scan.py"]
+    environment:
+      - DATABASE_URL=sqlite:///data/trading.db
+      - LOG_LEVEL=INFO
+      - PAPER_TRADING=true
+    env_file:
+      - ../.env
+    volumes:
+      - trading_data:/app/data
+      - trading_logs:/app/logs
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  trading_data:
+    driver: local
+  trading_logs:
+    driver: local

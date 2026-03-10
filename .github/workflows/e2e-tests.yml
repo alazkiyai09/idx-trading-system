@@ -1,0 +1,94 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  types: [opened, synchronize]
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    timeout: 30
+    services:
+      api:
+        image: node:20
+        options:
+          --health-cmd="curl -f http://localhost:8000/health || exit 1"
+        ports:
+          - "8000:8000"
+        env:
+          DATABASE_URL: sqlite:///data/trading.db
+        working-directory: /app
+        steps:
+          - uses: actions/checkout@v4
+          - name: Install API dependencies
+            run: |
+              cd api && pip install -r requirements.txt
+          - name: Populate sample data
+            run: |
+              python scripts/populate_metadata.py || true
+          - name: Start API server
+            run: |
+              uvicorn api.main:app --host 0.0.0.0 --port 8000 &
+              # Wait for API to be ready
+          - name: Install Playwright and            working-directory: ./e2e
+            run: |
+              npm ci
+              npx playwright install --with-deps chromium firefox
+          - name: Run E2E API Tests
+            working-directory: ./e2e
+            run: |
+              npx playwright test --project=api --reporter=html
+          - name: Upload API Test Results
+            if: always()
+              uses: actions/upload-artifact@v4
+            with:
+              name: api-test-results
+              path: e2e/playwright-report
+              retention-days: 7
+
+      dashboard:
+        image: node:20
+        needs: api
+        options:
+          --health-cmd "curl -f http://localhost:8000/health || exit 1"
+        ports:
+          - "8501:8501"
+        env:
+          API_URL: http://api:8000
+        working-directory: /app
+        steps:
+          - uses: actions/checkout@v4
+          - name: Install API dependencies
+            run: |
+              cd api && pip install -r requirements.txt
+          - name: Install Dashboard dependencies
+            run: |
+              pip install -r requirements.txt streamlit plotly
+          - name: Populate sample data
+            run: |
+              python scripts/populate_metadata.py || true
+          - name: Start API server
+            run: |
+              uvicorn api.main:app --host 0.0.0.0 --port 8000 &
+              # Wait for API to be ready
+          - name: Start Dashboard server
+            run: |
+              streamlit run dashboard/app.py --server.port 8501 --server.headless true &
+          - name: Install Playwright
+            working-directory: ./e2e
+            run: |
+              npm ci
+              npx playwright install --with-deps chromium firefox
+          - name: Run E2E Dashboard Tests
+            working-directory: ./e2e
+            run: |
+              npx playwright test --project=dashboard-chromium --reporter=html
+          - name: Upload Dashboard Test Results
+            if: always()
+              uses: actions/upload-artifact@v4
+            with:
+              name: dashboard-test-results
+              path: e2e/playwright-report
+              retention-days: 7

@@ -362,7 +362,7 @@ class BacktestEngine:
             Signal if generated, None otherwise.
         """
         # Technical analysis
-        tech_list = self.technical_analyzer.calculate(historical_bars)
+        tech_list = self.technical_analyzer.calculate(symbol, historical_bars)
         if not tech_list:
             return None
 
@@ -388,11 +388,18 @@ class BacktestEngine:
                 return None
 
         # Create signal
+        # Calculate stop loss and target based on ATR or percentage
+        atr = tech.atr if tech.atr else current_bar.close * 0.02
+        stop_loss = current_bar.close - atr * 2
+        target = current_bar.close + atr * 3
+
         signal = Signal(
             symbol=symbol,
             signal_type=SignalType.BUY,
             composite_score=score,
             entry_price=current_bar.close,
+            stop_loss=stop_loss,
+            targets=[target, target * 1.1, target * 1.2],
             timestamp=datetime.combine(current_bar.date, datetime.min.time()),
             setup_type=SetupType.MOMENTUM,
         )
@@ -436,7 +443,7 @@ class BacktestEngine:
 
             logger.debug(
                 f"BUY {signal.symbol}: {position_size} shares @ {bar.close:,.0f} "
-                f"(Score: {signal.signal_score})"
+                f"(Score: {signal.composite_score})"
             )
 
     def _execute_exit(
@@ -506,7 +513,7 @@ class BacktestEngine:
             if self.config.use_pattern_matching and self.historical_trades:
                 # Find similar patterns
                 pattern_result = self.pattern_matcher.get_best_matches(
-                    signal_score=signal.signal_score,
+                    signal_score=signal.composite_score,
                     min_matches=10,
                 )
 

@@ -57,7 +57,7 @@ class TechnicalAnalyzer:
 
     Example:
         analyzer = TechnicalAnalyzer()
-        indicators = analyzer.calculate(ohlcv_list)
+        indicators = analyzer.calculate("BBCA", ohlcv_list)
         latest = indicators[-1]
         print(f"RSI: {latest.rsi}, Trend: {latest.trend}")
     """
@@ -66,10 +66,11 @@ class TechnicalAnalyzer:
         """Initialize technical analyzer."""
         pass
 
-    def calculate(self, ohlcv_list: List[OHLCV]) -> List[TechnicalIndicators]:
+    def calculate(self, symbol: str, ohlcv_list: List[OHLCV]) -> List[TechnicalIndicators]:
         """Calculate all technical indicators.
 
         Args:
+            symbol: Stock symbol.
             ohlcv_list: List of OHLCV data sorted by date ascending.
 
         Returns:
@@ -93,7 +94,7 @@ class TechnicalAnalyzer:
         df = self._find_support_resistance(df)
 
         # Convert back to dataclass
-        return self._to_indicators(df, ohlcv_list[0].symbol)
+        return self._to_indicators(df, symbol)
 
     def _to_dataframe(self, ohlcv_list: List[OHLCV]) -> pd.DataFrame:
         """Convert OHLCV list to DataFrame.
@@ -105,7 +106,7 @@ class TechnicalAnalyzer:
             DataFrame with OHLCV data indexed by date.
         """
         data = {
-            "date": [o.date for o in ohlcv_list],
+            "date": [o.timestamp for o in ohlcv_list],
             "open": [o.open for o in ohlcv_list],
             "high": [o.high for o in ohlcv_list],
             "low": [o.low for o in ohlcv_list],
@@ -366,9 +367,12 @@ class TechnicalAnalyzer:
             if pd.isna(row["ema_20"]):
                 continue
 
+            timestamp = date_idx.to_pydatetime() if hasattr(date_idx, "to_pydatetime") else date_idx
             indicators = TechnicalIndicators(
+                timestamp=timestamp,
                 symbol=symbol,
-                date=date_idx if isinstance(date_idx, date) else date_idx.date(),
+                close=float(row["close"]),
+                volume=int(row["volume"]),
                 ema_20=float(row["ema_20"]),
                 ema_50=float(row["ema_50"]),
                 sma_200=float(row["sma_200"]) if pd.notna(row.get("sma_200")) else None,
@@ -385,26 +389,25 @@ class TechnicalAnalyzer:
                 volume_ratio=float(row["volume_ratio"]),
                 trend=str(row["trend"]),
                 support=float(row["support"]) if pd.notna(row.get("support")) else None,
-                resistance=float(row["resistance"])
-                if pd.notna(row.get("resistance"))
-                else None,
+                resistance=float(row["resistance"]) if pd.notna(row.get("resistance")) else None,
             )
             result.append(indicators)
 
         return result
 
     def get_current_indicators(
-        self, ohlcv_list: List[OHLCV]
+        self, symbol: str, ohlcv_list: List[OHLCV]
     ) -> Optional[TechnicalIndicators]:
         """Get indicators for the most recent bar.
 
         Args:
+            symbol: Stock symbol.
             ohlcv_list: List of OHLCV data.
 
         Returns:
             TechnicalIndicators for the latest bar, or None if insufficient data.
         """
-        indicators = self.calculate(ohlcv_list)
+        indicators = self.calculate(symbol, ohlcv_list)
         return indicators[-1] if indicators else None
 
     def calculate_score(

@@ -1,0 +1,175 @@
+{
+  "passed": [
+    {
+      "test": "Home: Health Check",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:00.038627"
+    },
+    {
+      "test": "Home: Detailed Health",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:00.273572"
+    },
+    {
+      "test": "Home: Data Freshness",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:00.278345"
+    },
+    {
+      "test": "Home: Stocks List",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:04.625442"
+    },
+    {
+      "test": "Home: Signals List",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:04.629944"
+    },
+    {
+      "test": "Screener: Get Stocks",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.763363"
+    },
+    {
+      "test": "Screener: Health Check",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.765902"
+    },
+    {
+      "test": "Screener: Signal Scan",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.768477"
+    },
+    {
+      "test": "Stock Detail: Get BBCA",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.778488"
+    },
+    {
+      "test": "Stock Detail: Chart Data",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.788820"
+    },
+    {
+      "test": "Stock Detail: Technical Analysis",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.888569"
+    },
+    {
+      "test": "Stock Detail: Fundamental Analysis",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.892392"
+    },
+    {
+      "test": "Stock Detail: Foreign Flow",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.897196"
+    },
+    {
+      "test": "Stock Detail: Sentiment Fetch",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.900420"
+    },
+    {
+      "test": "Stock Detail: ML Prediction",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.907558"
+    },
+    {
+      "test": "Sentiment: Sector Data",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.913486"
+    },
+    {
+      "test": "Sentiment: Latest Articles",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.920321"
+    },
+    {
+      "test": "Sentiment: Themes",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.928180"
+    },
+    {
+      "test": "Trading: List Sessions",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.954497"
+    },
+    {
+      "test": "Trading: Create Session",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.964885"
+    },
+    {
+      "test": "Settings: Trading Modes",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:08.967694"
+    },
+    {
+      "test": "Market Overview: All Stocks",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:13.391596"
+    },
+    {
+      "test": "ML: Ensemble Prediction",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:13.398216"
+    },
+    {
+      "test": "ML: Macro Correlation",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:13.429840"
+    },
+    {
+      "test": "ML: Commodities Data",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:13.443088"
+    },
+    {
+      "test": "Data: Stock Structure",
+      "message": "",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:17.783561"
+    },
+    {
+      "test": "Error: Invalid Stock",
+      "message": "Should return error for invalid stock",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:17.797446"
+    },
+    {
+      "test": "Error: 404 Handling",
+      "message": "Got 404",
+      "details": null,
+      "timestamp": "2026-03-08T17:55:17.800303"
+    }
+  ],
+  "failed": [],
+  "warnings": [],
+  "errors": []
+}

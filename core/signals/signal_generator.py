@@ -155,7 +155,7 @@ class SignalGenerator:
             Signal if conditions are met, None otherwise.
         """
         # Calculate technical indicators
-        indicators = self.technical_analyzer.calculate(ohlcv_data)
+        indicators = self.technical_analyzer.calculate(symbol, ohlcv_data)
         if not indicators:
             logger.warning(f"Insufficient data for signal generation: {symbol}")
             return None

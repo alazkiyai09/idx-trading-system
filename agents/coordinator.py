@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Any, Callable
 
 from config.settings import settings
-from config.trading_modes import TradingMode, ModeConfig
+from config.trading_modes import TradingMode, ModeConfig, get_mode_config
 
 logger = logging.getLogger(__name__)
 
@@ -127,20 +127,18 @@ class Coordinator:
 
         try:
             # Import and initialize components
-            from core.data.scraper import IDXScraper
-            from core.data.foreign_flow import ForeignFlowAnalyzer
+            from core.data.foreign_flow import ForeignFlowFetcher
             from core.analysis.technical import TechnicalAnalyzer
             from core.signals.signal_generator import SignalGenerator
             from core.risk.risk_manager import RiskManager
+            from core.portfolio.portfolio_manager import PortfolioManager
 
-            self._data_manager = IDXScraper()
-            self._flow_analyzer = ForeignFlowAnalyzer()
+            self._data_manager = None
+            self._flow_analyzer = ForeignFlowFetcher()
             self._technical_analyzer = TechnicalAnalyzer()
-            self._signal_generator = SignalGenerator(
-                trading_mode=self.config.mode,
-                min_score=self.config.min_signal_score,
-            )
-            self._risk_manager = RiskManager(trading_mode=self.config.mode)
+            self._signal_generator = SignalGenerator(config=get_mode_config(self.config.mode))
+            self._risk_manager = RiskManager(mode=self.config.mode)
+            self._portfolio_manager = PortfolioManager(initial_capital=settings.initial_capital)
 
             # Try to initialize notifier if available
             try:
@@ -294,37 +292,41 @@ class Coordinator:
             Signal dictionary if generated, None otherwise.
         """
         try:
-            # Get historical data
-            if self._data_manager:
-                history = self._data_manager.fetch_historical(symbol, period="3mo")
-            else:
-                # Use mock data if data manager not available
-                history = self._get_mock_data(symbol)
+            history = self._get_mock_data(symbol)
 
             if history is None or len(history) < 20:
                 logger.debug(f"Insufficient data for {symbol}")
                 return None
 
-            # Calculate technical indicators
-            indicators = self._technical_analyzer.calculate(history)
-
             # Analyze foreign flow
             flow_data = None
             if self._flow_analyzer:
                 try:
-                    flow_data = self._flow_analyzer.analyze(symbol)
+                    flow_data = self._flow_analyzer.get_flow_signal_for_symbol(symbol)
                 except Exception:
                     pass  # Flow analysis is optional
 
             # Generate signal
             signal = self._signal_generator.generate(
                 symbol=symbol,
-                data=history,
-                indicators=indicators,
-                flow_data=flow_data,
+                ohlcv_data=history,
+                flow_analysis=flow_data,
             )
 
-            return signal
+            if signal is None:
+                return None
+
+            return {
+                "symbol": signal.symbol,
+                "signal_type": signal.signal_type.value,
+                "setup_type": signal.setup_type.value,
+                "entry_price": signal.entry_price,
+                "stop_loss": signal.stop_loss,
+                "targets": signal.targets,
+                "composite_score": signal.composite_score,
+                "key_factors": signal.key_factors,
+                "risks": signal.risks,
+            }
 
         except Exception as e:
             logger.error(f"Error scanning {symbol}: {e}")
@@ -349,15 +351,34 @@ class Coordinator:
 
         try:
             # Create a mock portfolio for validation
-            portfolio_state = {
-                "total_value": 1_000_000_000,  # 1 billion IDR
-                "cash": 500_000_000,
-                "positions": [],
-                "daily_pnl": 0,
-            }
+            from core.data.models import PortfolioState, Signal, SignalType, SetupType, FlowSignal
+
+            portfolio_state = PortfolioState(
+                total_value=1_000_000_000,
+                cash=500_000_000,
+                positions=[],
+                daily_pnl=0,
+                daily_pnl_pct=0.0,
+                drawdown_pct=0.0,
+                open_positions=0,
+            )
+
+            signal_obj = Signal(
+                symbol=signal["symbol"],
+                timestamp=datetime.now(),
+                signal_type=SignalType[signal["signal_type"]],
+                setup_type=SetupType[signal["setup_type"]],
+                entry_price=signal["entry_price"],
+                stop_loss=signal["stop_loss"],
+                targets=signal.get("targets", []),
+                composite_score=signal.get("composite_score", 0.0),
+                key_factors=signal.get("key_factors", []),
+                risks=signal.get("risks", []),
+                flow_signal=FlowSignal.NEUTRAL,
+            )
 
             result = self._risk_manager.validate_entry(
-                signal=signal,
+                signal=signal_obj,
                 portfolio=portfolio_state,
             )
 
@@ -384,7 +405,7 @@ class Coordinator:
         except Exception as e:
             logger.error(f"Failed to send notifications: {e}")
 
-    def _get_mock_data(self, symbol: str) -> List[Dict[str, Any]]:
+    def _get_mock_data(self, symbol: str):
         """Get mock data for testing.
 
         Args:
@@ -393,8 +414,10 @@ class Coordinator:
         Returns:
             List of mock OHLCV data.
         """
-        import random
         from datetime import timedelta
+        import random
+
+        from core.data.models import OHLCV
 
         base_price = random.uniform(1000, 10000)
         data = []
@@ -414,14 +437,17 @@ class Coordinator:
                 # Fallback if date calculation fails
                 data_date = end_date - timedelta(days=i)
 
-            data.append({
-                "date": data_date,
-                "open": base_price * random.uniform(0.98, 1.02),
-                "high": base_price * random.uniform(1.00, 1.05),
-                "low": base_price * random.uniform(0.95, 1.00),
-                "close": base_price,
-                "volume": random.randint(100000, 10000000),
-            })
+            data.append(
+                OHLCV(
+                    symbol=symbol,
+                    date=data_date,
+                    open=base_price * random.uniform(0.98, 1.02),
+                    high=base_price * random.uniform(1.00, 1.05),
+                    low=base_price * random.uniform(0.95, 1.00),
+                    close=base_price,
+                    volume=random.randint(100000, 10000000),
+                )
+            )
 
         return data
 
@@ -432,7 +458,30 @@ class Coordinator:
             Portfolio summary dictionary.
         """
         if self._portfolio_manager:
-            return self._portfolio_manager.get_summary()
+            state = self._portfolio_manager.get_state()
+            return {
+                "total_value": state.total_value,
+                "cash": state.cash,
+                "positions_value": state.positions_value,
+                "positions": [
+                    {
+                        "symbol": pos.symbol,
+                        "entry_price": pos.entry_price,
+                        "current_price": pos.current_price,
+                        "quantity": pos.quantity,
+                        "entry_date": pos.entry_date,
+                        "unrealized_pnl": pos.unrealized_pnl,
+                        "unrealized_pnl_pct": pos.unrealized_pnl_pct,
+                        "stop_loss": pos.stop_loss,
+                        "target_1": pos.target_1,
+                    }
+                    for pos in state.positions
+                ],
+                "daily_pnl": state.daily_pnl,
+                "unrealized_pnl": state.unrealized_pnl,
+                "total_pnl": state.total_pnl,
+                "total_pnl_pct": state.total_pnl_pct,
+            }
 
         return {
             "total_value": 0,

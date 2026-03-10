@@ -1,0 +1,27 @@
+version: '3.8'
+
+# Development overrides
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      - LOG_LEVEL=DEBUG
+    volumes:
+      - ..:/app
+      - trading_data:/app/data
+    ports:
+      - "8000:8000"
+
+  scheduler:
+    volumes:
+      - ..:/app
+      - trading_data:/app/data
+    environment:
+      - LOG_LEVEL=DEBUG
+
+volumes:
+  trading_data:
+    driver: local
