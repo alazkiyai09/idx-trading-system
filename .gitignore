@@ -80,6 +80,10 @@ test-results/
 *.md
 !README.md
 
+# Local context scratch files
+Context.cclear
+Context.txt
+
 # Credentials and secrets
 .env
 .env.*

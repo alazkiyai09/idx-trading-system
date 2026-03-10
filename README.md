@@ -1,142 +1,197 @@
 # IDX Trading System
 
-Institutional-grade trading system for Indonesia Stock Exchange (IDX).
+Trading and research workspace for Indonesia Stock Exchange equities, with a FastAPI backend, Streamlit dashboard, daily data pipeline, paper trading, screening, sentiment, and offline ML model management.
 
-## Key Features
+## What Is In This Repo
 
-- **Multi-mode trading**: Intraday, Swing, Position, and Investor modes
-- **Foreign flow analysis**: Track and analyze foreign investor activity (critical for IDX)
-- **Quantitative risk management**: Empirical Kelly Criterion with Monte Carlo uncertainty quantification
-- **Calibration-based exits**: Dynamic exit timing based on calibration surface analysis
-- **Backtesting engine**: Event-driven simulation with IDX-realistic conditions (fees, slippage, ARA/ARB)
-- **Fundamental analysis**: Multi-agent analysis pipeline with fraud detection (Benford's Law)
-- **TimesFM forecasting**: Google's Time Series Foundation Model integration (optional)
-- **Notifications**: Telegram bot for signal alerts and daily summaries
+- FastAPI service for stock data, health, signals, simulation, sentiment, portfolio, and ML prediction routes
+- Streamlit dashboard with top navigation and inline page controls
+- SQLite-backed daily market data workflow
+- Paper trading and replay-style virtual trading
+- Offline ML training pipeline with artifact publishing and model management
+- Automated test coverage across unit, integration, dashboard, and Playwright E2E layers
 
-## Trading Modes
+## Current Product Shape
 
-| Mode | Hold Period | Risk/Trade | Focus |
-|------|-------------|------------|-------|
-| **Intraday** | Same day | 0.5% | Quick momentum |
-| **Swing** | 2-7 days | 1.0% | Foreign flow + technical |
-| **Position** | 1-4 weeks | 1.5% | Trend following |
-| **Investor** | Months | 2.0% | Fundamentals |
+Main dashboard modules:
 
-## IDX Market Specifics
+- `Home`: system status, data freshness, desk actions, manual daily refresh
+- `Screener`: inline filters and signal scanning
+- `Stock Detail`: price, technicals, sentiment, flow, and analysis views
+- `Market Overview`: market breadth and summary views
+- `Sentiment`: article-based sentiment analysis
+- `Virtual Trading`: beta paper trading and replay workflow
+- `ML Prediction & Analysis`: inference, comparison, Monte Carlo, and technical overlays
+- `Settings -> Model Ops`: training readiness, batch training, artifact inventory, upload/delete, and background training commands
 
-- **Lot size**: 100 shares
-- **Fees**: 0.15% buy, 0.25% sell (includes 0.1% transaction tax)
-- **Daily price limit**: +/-7% (ARA/ARB)
-- **Settlement**: T+2
-- **Trading hours**: 09:00-15:30 WIB (Asia/Jakarta)
-- **Universe**: LQ45 (45 most liquid stocks), IDX30 (30 largest)
+Important current behavior:
 
-## Installation
-
-### Prerequisites
-
-- Python 3.10+
-- pip package manager
-
-### Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/alazkiyai09/idx-trading-system.git
-cd idx-trading-system
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your API keys
-```
-
-## Quick Start
-
-```bash
-# Run daily scan (swing mode)
-python scripts/daily_scan.py --mode swing
-
-# Run backtest
-python scripts/run_backtest.py --strategy swing --period 2023
-
-# Run tests
-pytest tests/ -v
-```
-
-## Project Structure
-
-```
-idx-trading-system/
-├── config/              # Configuration (settings, trading modes, constants)
-├── core/                # Core business logic
-│   ├── data/            # Data layer (scraper, database, cache)
-│   ├── analysis/        # Technical analysis
-│   ├── signals/         # Signal generation
-│   ├── risk/            # Risk management (Empirical Kelly, pattern matching)
-│   ├── execution/       # Paper trading, order management
-│   ├── portfolio/       # Portfolio tracking
-│   └── forecasting/     # TimesFM integration
-├── research/            # Monte Carlo, calibration surfaces, return analysis
-├── backtest/            # Backtesting engine, metrics, walk-forward
-├── fundamental/         # Fundamental analysis with multi-agent pipeline
-├── agents/              # Trading system coordinator
-├── notifications/       # Telegram notifications
-├── scripts/             # CLI scripts (daily scan, backtest, data fetch)
-└── tests/               # Unit, integration, and E2E tests
-```
+- Market data is treated as daily, not real-time
+- ML inference only works for symbols that already have trained artifacts in `data/ml_artifacts`
+- Training is offline and batch-oriented; the dashboard launches background jobs but does not do inline training on the prediction page
+- Model refresh is currently a retrain-and-replace workflow, not true incremental online learning
 
 ## Architecture
 
+```text
+SQLite/Data Jobs -> FastAPI Read Models -> Streamlit Dashboard
+                     |                  |
+                     |                  -> Paper trading / replay / ML inference UI
+                     -> Signals / sentiment / prediction / health APIs
 ```
-Data Layer → Analysis Layer → Signal Layer → Risk Layer → Execution Layer → Output Layer
-```
 
-- **Risk Manager** has veto power over all trades
-- **LLM outputs** are validated before affecting trading decisions
-- **Backtesting is mandatory** before live trading
+Core areas:
 
-## Risk Management
+- [`api/`](/mnt/data/Project/idx-trading-system/api): FastAPI entrypoint, routes, schemas, cache
+- [`dashboard/`](/mnt/data/Project/idx-trading-system/dashboard): Streamlit app, pages, shared UI components
+- [`core/`](/mnt/data/Project/idx-trading-system/core): analysis, execution, portfolio, ML pipeline, data logic
+- [`scripts/`](/mnt/data/Project/idx-trading-system/scripts): ingestion, metadata enrichment, training helpers
+- [`tests/`](/mnt/data/Project/idx-trading-system/tests): unit, integration, and dashboard tests
+- [`e2e/`](/mnt/data/Project/idx-trading-system/e2e): Playwright browser and API tests
 
-The system uses three institutional-grade methods:
+## Quick Start
 
-1. **Empirical Kelly Criterion** - Position sizing adjusted for edge uncertainty
-2. **Calibration Surface Analysis** - Dynamic exit timing based on signal strength decay
-3. **Monte Carlo Simulation** - 10,000 path resampling for drawdown distribution analysis
-
-## Configuration
-
-Key settings in `.env`:
+### 1. Install
 
 ```bash
-ANTHROPIC_API_KEY=your_key    # For Claude LLM
-GLM_API_KEY=your_key          # For GLM analysis
-TELEGRAM_BOT_TOKEN=your_token # For notifications
-INITIAL_CAPITAL=100000000     # Starting capital (IDR)
-DEFAULT_MODE=swing            # Default trading mode
-PAPER_TRADING=true            # Paper trading mode
+git clone https://github.com/alazkiyai09/idx-trading-system.git
+cd idx-trading-system
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-## Tech Stack
+If you want the full ML ensemble with `LSTM` and `CNN-LSTM`, install TensorFlow in the environment:
 
-- **Language**: Python 3.10+
-- **Database**: SQLite (via SQLAlchemy)
-- **Data**: Yahoo Finance, IDX website scraping
-- **Analysis**: pandas, numpy, scipy, pandas-ta
-- **LLM**: Claude (Anthropic), GLM
-- **Forecasting**: TimesFM 2.5 (Google, optional)
-- **Notifications**: python-telegram-bot
-- **Testing**: pytest
+```bash
+python3 -m pip install tensorflow-cpu
+```
 
-## Disclaimer
+### 2. Run the API
 
-This trading system is for educational and research purposes only. Past performance does not guarantee future results. Always do your own research and never invest more than you can afford to lose.
+```bash
+ENABLE_REAL_PREDICTION=true python3 -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+### 3. Run the dashboard
+
+```bash
+API_URL=http://127.0.0.1:8000 streamlit run dashboard/app.py --server.port 8501
+```
+
+Open:
+
+- Dashboard: `http://localhost:8501`
+- API: `http://localhost:8000`
+- API docs: `http://localhost:8000/docs`
+
+## Data Workflow
+
+The app is optimized for daily updates rather than intraday streaming.
+
+- Price history is stored in SQLite under `data/trading.db`
+- The dashboard exposes a manual refresh action for daily data
+- Expected cadence is after market close or by midnight Asia/Jakarta
+- Expensive stock list reads are served through cached API read models instead of full-table recalculation on every page load
+
+Useful scripts:
+
+```bash
+python3 scripts/ingest_all_stocks.py
+python3 scripts/enrich_missing_metadata.py
+```
+
+## ML Model Workflow
+
+### Readiness
+
+Use `Settings -> Model Ops -> Training` to inspect:
+
+- available history rows
+- minimum rows required
+- recommended rows
+- whether a symbol is `not_ready`, `limited`, or `ready`
+
+Current rule of thumb:
+
+- below minimum history: training blocked
+- minimum to recommended range: training allowed but lower trust
+- above recommended range: normal training
+
+### Train models
+
+Single or batch training is offline and writes artifacts to `data/ml_artifacts`.
+
+Dashboard path:
+
+- `Settings -> Model Ops -> Training -> Batch Training`
+
+Shell path:
+
+```bash
+bash scripts/run_training_in_background.sh ADRO
+LOOKBACK_DAYS=400 OVERWRITE=true bash scripts/run_training_in_background.sh ADRO BBCA TLKM
+```
+
+Artifacts produced:
+
+- `data/ml_artifacts/{SYMBOL}_ensemble.pkl`
+- `data/ml_artifacts/{SYMBOL}_ensemble.meta.json`
+
+Training job status is tracked in:
+
+- `data/training_jobs/model_training_status.json`
+- `data/training_jobs/model_training_history.json`
+
+### Manage models
+
+Use `Settings -> Model Ops -> Model Management` to:
+
+- list stored models
+- upload artifacts
+- delete artifacts
+- copy background training commands
+
+### Refresh models
+
+Yes, models can be updated with newer daily data.
+
+Current implementation:
+
+- rerun training with overwrite enabled
+- retrain from scratch on the latest available history
+- replace the old artifact
+
+This is not incremental online learning yet.
+
+## Testing
+
+Python tests:
+
+```bash
+pytest -q
+```
+
+Targeted examples:
+
+```bash
+pytest -q tests/integration/test_prediction_api.py
+pytest -q tests/dashboard/test_components.py
+```
+
+Playwright:
+
+```bash
+cd e2e
+npx playwright test
+```
+
+## Notes
+
+- `Virtual Trading` is a beta paper-trading workflow, not a broker-connected execution system
+- Some advanced modules still depend on external data quality and artifact availability
+- Streamlit page transitions can still show brief shell repaint behavior because this is a multipage Streamlit app, not a SPA frontend
 
 ## License
 
