@@ -1,0 +1,7 @@
+[
+  {"date": "2024-07-01", "symbol": "BBRI", "open": 5125, "high": 5175, "low": 5100, "close": 5150, "volume": 85000000, "adjusted_close": 5150},
+  {"date": "2024-07-02", "symbol": "BBRI", "open": 5150, "high": 5200, "low": 5125, "close": 5175, "volume": 92000000, "adjusted_close": 5175},
+  {"date": "2024-07-03", "symbol": "BBRI", "open": 5175, "high": 5225, "low": 5150, "close": 5200, "volume": 78000000, "adjusted_close": 5200},
+  {"date": "2024-07-04", "symbol": "BBRI", "open": 5200, "high": 5250, "low": 5175, "close": 5225, "volume": 105000000, "adjusted_close": 5225},
+  {"date": "2024-07-05", "symbol": "BBRI", "open": 5225, "high": 5275, "low": 5200, "close": 5250, "volume": 88000000, "adjusted_close": 5250}
+]

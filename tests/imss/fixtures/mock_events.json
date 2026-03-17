@@ -1,0 +1,22 @@
+[
+  {
+    "timestamp": "2024-07-01T09:00:00+07:00",
+    "category": "EARNINGS",
+    "source": "IDX Filing",
+    "title": "BRI reports Q2 2024 net profit up 10% YoY",
+    "summary": "Bank Rakyat Indonesia reported second quarter net profit of IDR 14.8 trillion, up 10% year-over-year, driven by strong micro-lending growth and improved asset quality.",
+    "affected_entities": [{"type": "STOCK", "symbol": "BBRI"}, {"type": "SECTOR", "symbol": "BANKING"}],
+    "sentiment_score": 0.6,
+    "magnitude_score": 0.7
+  },
+  {
+    "timestamp": "2024-07-03T09:00:00+07:00",
+    "category": "REGULATORY",
+    "source": "OJK",
+    "title": "OJK raises minimum capital requirements for digital banks",
+    "summary": "OJK announced increased minimum capital requirements for digital banking licenses, effective Q4 2024. Traditional banks like BRI with existing digital arms are less affected.",
+    "affected_entities": [{"type": "STOCK", "symbol": "BBRI"}, {"type": "SECTOR", "symbol": "BANKING"}],
+    "sentiment_score": -0.2,
+    "magnitude_score": 0.4
+  }
+]

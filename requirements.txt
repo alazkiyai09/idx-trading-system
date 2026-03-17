@@ -59,3 +59,11 @@ python-dotenv>=1.0.0
 loguru>=0.7.0
 pydantic>=2.5.0
 pydantic-settings>=2.0.0
+
+# IMSS (Multi-Agent Simulation)
+chromadb>=0.4.22
+aiosqlite>=0.20
+structlog>=24.1
+rich>=13.7
+tiktoken>=0.6
+tqdm>=4.66
