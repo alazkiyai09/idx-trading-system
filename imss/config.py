@@ -60,12 +60,14 @@ class SimulationConfig(BaseModel):
     steps_per_day: int = 1
 
     # Agent Population
-    tier1_personas: list[str] = ["pak_budi", "sarah", "andi"]
+    tier1_personas: list[str] = ["pak_budi", "sarah", "andi", "dr_lim", "marketbot"]
     tier2_per_archetype: int = 4
     tier2_archetypes: list[str] = [
         "momentum_chaser",
         "panic_seller",
         "news_reactive",
+        "dividend_holder",
+        "sector_rotator",
     ]
     tier3_total: int = 50
     tier3_distribution: dict[str, float] = {

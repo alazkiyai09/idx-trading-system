@@ -55,6 +55,24 @@ ARCHETYPES: dict[str, ArchetypeConfig] = {
         decision_latency=0,
         initial_cash_range=(30_000_000, 100_000_000),
     ),
+    "dividend_holder": ArchetypeConfig(
+        key="dividend_holder",
+        name="Dividend Holder",
+        one_liner="You buy high-dividend stocks and hold long term. You rarely sell unless dividends are cut.",
+        risk_tolerance_range=(0.3, 0.5),
+        sentiment_bias_range=(0.1, 0.3),
+        decision_latency=2,
+        initial_cash_range=(100_000_000, 500_000_000),
+    ),
+    "sector_rotator": ArchetypeConfig(
+        key="sector_rotator",
+        name="Sector Rotator",
+        one_liner="You shift allocation based on economic cycle and macro data. Rate cuts mean buy banking, inflation means sell growth.",
+        risk_tolerance_range=(0.4, 0.7),
+        sentiment_bias_range=(-0.1, 0.1),
+        decision_latency=1,
+        initial_cash_range=(150_000_000, 600_000_000),
+    ),
 }
 
 
@@ -80,6 +98,10 @@ class Tier2Agent(BaseAgent):
         events: list[dict[str, Any]],
         step: int,
     ) -> AgentAction:
+        # Apply decision latency BEFORE router check — filter too-recent events
+        if self.decision_latency > 0:
+            events = [e for e in events if step - e.get("_step", 0) >= self.decision_latency]
+
         if self._router is None:
             return default_hold_action(self.id, market_state.get("symbol", "BBRI"), step)
 
