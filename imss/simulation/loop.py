@@ -74,13 +74,16 @@ async def run_simulation_loop(
     router: LLMRouter,
     batcher: LLMBatcher,
     on_step: Any = None,
+    seed: int = 42,
+    fundamentals: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Execute the turn-based simulation loop.
 
     Returns list of step log dicts.
     """
-    rng = random.Random(42)
+    rng = random.Random(seed)
     step_logs: list[dict[str, Any]] = []
+    prev_aggregate_order_imbalance = 0.0
 
     tier1_agents = [a for a in agents if a.tier == 1]
     tier2_agents = [a for a in agents if a.tier == 2]
@@ -114,11 +117,14 @@ async def run_simulation_loop(
             "pct_change_5d": pct_change_5d,
             "pct_change_20d": pct_change_20d,
         }
+        market_state["prev_aggregate_order_imbalance"] = prev_aggregate_order_imbalance
+        market_state["fundamentals"] = fundamentals
 
         # 2. Get events for this date
         day_events = events_by_date.get(sim_date, [])
         for evt in day_events:
             evt["_injection_step"] = step
+            evt["_step"] = step
 
         # 3. Agent execution by tier
         all_actions: list[AgentAction] = []
@@ -152,6 +158,7 @@ async def run_simulation_loop(
         sell_vol = sum(a.quantity for a in resolved if a.action == "SELL")
         total_vol = buy_vol + sell_vol
         order_imbalance = (buy_vol - sell_vol) / total_vol if total_vol > 0 else 0.0
+        prev_aggregate_order_imbalance = order_imbalance
 
         step_log = {
             "step_number": step,
