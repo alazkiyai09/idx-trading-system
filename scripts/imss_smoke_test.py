@@ -65,6 +65,39 @@ async def smoke_test() -> bool:
     return passed
 
 
+async def smoke_test_multi_run() -> bool:
+    """Minimal 2-run multi-run test."""
+    config = SimulationConfig(
+        target_stocks=["BBRI"],
+        mode="BACKTEST",
+        backtest_start="2024-07-01",
+        backtest_end="2024-07-05",
+        tier1_personas=["pak_budi"],
+        tier2_per_archetype=0,
+        tier2_archetypes=[],
+        tier3_total=5,
+        num_parallel_runs=2,
+    )
+
+    console.print("\n[bold blue]IMSS Multi-Run Smoke Test (2 runs)[/]")
+
+    engine = SimulationEngine()
+    try:
+        result = await engine.run_multi(config)
+    except Exception as e:
+        console.print(f"[red]FAIL: Multi-run crashed: {e}[/]")
+        return False
+
+    if result.num_runs != 2:
+        console.print(f"[red]FAIL: Expected 2 runs, got {result.num_runs}[/]")
+        return False
+
+    console.print(f"[bold green]PASS[/] — {result.num_runs} runs, batch cost ${result.total_batch_cost_usd:.4f}")
+    return True
+
+
 if __name__ == "__main__":
     ok = asyncio.run(smoke_test())
+    if ok:
+        ok = asyncio.run(smoke_test_multi_run())
     sys.exit(0 if ok else 1)
