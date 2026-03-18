@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Callable
 
 import pandas as pd
@@ -24,6 +24,7 @@ from imss.db.models import (
     Event,
     SimulationRun,
     SimulationStepLog,
+    StockFundamentals,
     StockOHLCV,
 )
 from imss.llm.batcher import LLMBatcher
@@ -52,6 +53,7 @@ class SimulationResult(BaseModel):
     estimated_cost_usd: float
     json_parse_success_rate: float
     step_count: int
+    run_number: int = 0
 
 
 class SimulationEngine:
@@ -74,6 +76,8 @@ class SimulationEngine:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        seed = 42 + run_number
+        cost_pre = self._router.cost_tracker.snapshot()
 
         # 1. Initialize agents
         agents: list[BaseAgent] = []
@@ -84,7 +88,7 @@ class SimulationEngine:
             agents.append(agent)
 
         for archetype in config.tier2_archetypes:
-            t2_agents = create_tier2_agents(archetype, config.tier2_per_archetype)
+            t2_agents = create_tier2_agents(archetype, config.tier2_per_archetype, seed=seed)
             for a in t2_agents:
                 a.set_router(self._router)
             agents.extend(t2_agents)
@@ -92,8 +96,17 @@ class SimulationEngine:
         t3_agents = create_tier3_agents(
             total=config.tier3_total,
             distribution=config.tier3_distribution,
+            seed=seed,
         )
         agents.extend(t3_agents)
+
+        # Record initial portfolio values for P&L calculation
+        initial_agent_state: dict[str, dict] = {}
+        for agent in agents:
+            initial_agent_state[agent.id] = {
+                "cash": agent.working_memory.cash,
+                "holdings": dict(agent.working_memory.holdings),
+            }
 
         logger.info(
             "Initialized %d agents: %d T1, %d T2, %d T3",
@@ -120,10 +133,12 @@ class SimulationEngine:
         if not rows:
             logger.error("No price data found for %s", config.target_stocks[0])
             await engine.dispose()
+            cost_post = self._router.cost_tracker.snapshot()
             return SimulationResult(
                 simulation_id="", status="FAILED", total_steps=0,
-                agents_final=[], total_llm_calls=0, total_tokens_used=0,
-                estimated_cost_usd=0, json_parse_success_rate=0, step_count=0,
+                agents_final=[], total_llm_calls=cost_post["total_calls"] - cost_pre["total_calls"],
+                total_tokens_used=0, estimated_cost_usd=0, json_parse_success_rate=0,
+                step_count=0, run_number=run_number,
             )
 
         # Build DataFrame
@@ -134,6 +149,26 @@ class SimulationEngine:
         index = [r.timestamp for r in rows]
         df = pd.DataFrame(data, index=pd.DatetimeIndex(index))
         market_data = MarketData(df, config.target_stocks[0])
+
+        # 2b. Load fundamentals
+        fundamentals = None
+        async with session_factory() as session:
+            stmt = (
+                select(StockFundamentals)
+                .where(StockFundamentals.symbol == config.target_stocks[0])
+                .order_by(StockFundamentals.period.desc())
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            fund_row = result.scalars().first()
+            if fund_row:
+                fundamentals = {
+                    "pe_ratio": fund_row.pe_ratio,
+                    "pb_ratio": fund_row.pb_ratio,
+                    "dividend_yield_pct": fund_row.dividend_yield_pct,
+                    "roe_pct": fund_row.roe_pct,
+                    "market_cap_trillion_idr": fund_row.market_cap_trillion_idr,
+                }
 
         # 3. Load events
         async with session_factory() as session:
@@ -195,6 +230,8 @@ class SimulationEngine:
             router=self._router,
             batcher=self._batcher,
             on_step=on_step,
+            seed=seed,
+            fundamentals=fundamentals,
         )
 
         # 6. Save step logs (batched write)
@@ -214,17 +251,33 @@ class SimulationEngine:
                     ))
 
         # 7. Finalize
-        cost_tracker = self._router.cost_tracker
+        cost_post = self._router.cost_tracker.snapshot()
+        run_llm_calls = cost_post["total_calls"] - cost_pre["total_calls"]
+        run_input_tokens = cost_post["total_input_tokens"] - cost_pre["total_input_tokens"]
+        run_output_tokens = cost_post["total_output_tokens"] - cost_pre["total_output_tokens"]
+        run_tokens = run_input_tokens + run_output_tokens
+        run_cost = (run_input_tokens * 0.001 + run_output_tokens * 0.002) / 1000
+        run_parse_successes = cost_post["parse_successes"] - cost_pre["parse_successes"]
+        run_parse_failures = cost_post["parse_failures"] - cost_pre["parse_failures"]
+        run_parse_total = run_parse_successes + run_parse_failures
+        run_parse_rate = run_parse_successes / run_parse_total if run_parse_total > 0 else 1.0
+
         final_prices = {market_data.symbol: float(df.iloc[-1]["Close"])}
+        first_prices = {market_data.symbol: float(df.iloc[0]["Close"])}
 
         agent_summaries = []
         for agent in agents:
-            pv = agent.working_memory.compute_portfolio_value(final_prices)
+            final_value = agent.working_memory.compute_portfolio_value(final_prices)
+            init_state = initial_agent_state[agent.id]
+            initial_value = init_state["cash"] + sum(
+                qty * first_prices.get(sym, 0) for sym, qty in init_state["holdings"].items()
+            )
+            pnl_pct = ((final_value - initial_value) / initial_value * 100) if initial_value > 0 else 0.0
             agent_summaries.append(AgentSummary(
                 id=agent.id, tier=agent.tier, persona_type=agent.persona_type,
                 final_cash=agent.working_memory.cash,
                 holdings=dict(agent.working_memory.holdings),
-                pnl_pct=0.0,  # Detailed P&L in Phase 2
+                pnl_pct=round(pnl_pct, 4),
             ))
 
         async with session_factory() as session:
@@ -234,10 +287,10 @@ class SimulationEngine:
                     .where(SimulationRun.id == sim_id)
                     .values(
                         status="COMPLETED",
-                        completed_at=datetime.utcnow(),
-                        total_llm_calls=cost_tracker.total_calls,
-                        total_tokens_used=cost_tracker.total_tokens,
-                        estimated_cost_usd=cost_tracker.estimated_cost_usd,
+                        completed_at=datetime.now(tz=timezone.utc),
+                        total_llm_calls=run_llm_calls,
+                        total_tokens_used=run_tokens,
+                        estimated_cost_usd=run_cost,
                     )
                 )
 
@@ -248,9 +301,10 @@ class SimulationEngine:
             status="COMPLETED",
             total_steps=len(trading_days),
             agents_final=agent_summaries,
-            total_llm_calls=cost_tracker.total_calls,
-            total_tokens_used=cost_tracker.total_tokens,
-            estimated_cost_usd=cost_tracker.estimated_cost_usd,
-            json_parse_success_rate=cost_tracker.json_parse_rate,
+            total_llm_calls=run_llm_calls,
+            total_tokens_used=run_tokens,
+            estimated_cost_usd=run_cost,
+            json_parse_success_rate=run_parse_rate,
             step_count=len(step_logs),
+            run_number=run_number,
         )

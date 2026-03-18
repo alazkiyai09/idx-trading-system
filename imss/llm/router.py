@@ -53,6 +53,16 @@ class CostTracker:
         total = self.parse_successes + self.parse_failures
         return self.parse_successes / total if total > 0 else 1.0
 
+    def snapshot(self) -> dict:
+        """Return current state for delta computation in multi-run."""
+        return {
+            "total_calls": self.total_calls,
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "parse_successes": self.parse_successes,
+            "parse_failures": self.parse_failures,
+        }
+
 
 def strip_json_fences(text: str) -> str:
     """Remove markdown code fences from JSON response."""
