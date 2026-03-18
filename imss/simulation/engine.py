@@ -54,6 +54,7 @@ class SimulationResult(BaseModel):
     json_parse_success_rate: float
     step_count: int
     run_number: int = 0
+    step_logs: list[dict[str, Any]] = []
 
 
 class SimulationEngine:
@@ -307,6 +308,7 @@ class SimulationEngine:
             json_parse_success_rate=run_parse_rate,
             step_count=len(step_logs),
             run_number=run_number,
+            step_logs=step_logs,
         )
 
     async def run_multi(
