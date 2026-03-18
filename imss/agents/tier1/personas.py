@@ -111,6 +111,25 @@ PERSONAS: dict[str, PersonaConfig] = {
         initial_cash=5_000_000_000,
         initial_holdings={"BBRI": 300_000},
     ),
+    "marketbot": PersonaConfig(
+        key="marketbot",
+        name="MarketBot",
+        description="Automated market making algorithm. Provides liquidity, profits from bid-ask spread. No directional bias.",
+        behavioral_rules=(
+            "- You provide liquidity — you buy when others are selling, sell when others are buying\n"
+            "- You have no directional opinion — your goal is to capture spread\n"
+            "- You reduce activity during high volatility\n"
+            "- You increase activity during calm, range-bound markets\n"
+            "- You never hold large net positions — you rebalance toward neutral\n"
+            "- You execute based on aggregate order flow, not events"
+        ),
+        risk_tolerance=0.2,
+        max_allocation=20,
+        stop_loss_pct=1,
+        holding_period="intraday",
+        initial_cash=20_000_000_000,
+        initial_holdings={"BBRI": 200_000},
+    ),
 }
 
 
@@ -218,6 +237,18 @@ class Tier1Agent(BaseAgent):
 def create_tier1_agent(persona_key: str) -> Tier1Agent:
     """Factory: create a Tier 1 agent from persona key."""
     config = PERSONAS[persona_key]
+    if persona_key == "marketbot":
+        from imss.agents.tier1.marketbot import MarketBotAgent
+        return MarketBotAgent(
+            id=config.key,
+            name=config.name,
+            persona_type=f"tier1_{config.key}",
+            persona_config=config,
+            working_memory=WorkingMemory(
+                cash=config.initial_cash,
+                holdings=dict(config.initial_holdings),
+            ),
+        )
     return Tier1Agent(
         id=config.key,
         name=config.name,
