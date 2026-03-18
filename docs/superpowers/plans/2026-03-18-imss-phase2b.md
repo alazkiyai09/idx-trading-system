@@ -108,12 +108,33 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [ ] **Step 5: Update existing DB test to include new table**
+
+In `tests/imss/test_data/test_db.py`, update the existing test's expected set (line 12 comment and lines 24-32):
+
+Change the docstring from `"""All 7 IMSS tables are created in SQLite."""` to `"""All 8 IMSS tables are created in SQLite."""`
+
+Add `"stock_fundamentals"` to the expected set:
+
+```python
+    expected = {
+        "stocks_ohlcv",
+        "events",
+        "event_entities",
+        "causal_links",
+        "simulation_runs",
+        "agent_configs",
+        "simulation_step_logs",
+        "stock_fundamentals",
+    }
+```
+
+- [ ] **Step 6: Run tests to verify they pass**
 
 Run: `python3 -m pytest tests/imss/test_data/test_db.py -v`
-Expected: ALL PASS (existing + new)
+Expected: ALL PASS (existing updated + new)
 
-- [ ] **Step 6: Create seed data file**
+- [ ] **Step 7: Create seed data file**
 
 Create `data/seed_events/bbri_fundamentals.json`:
 
@@ -129,7 +150,7 @@ Create `data/seed_events/bbri_fundamentals.json`:
 }
 ```
 
-- [ ] **Step 7: Update seed data script**
+- [ ] **Step 8: Update seed data script**
 
 In `scripts/imss_seed_data.py`, add after the events processing block (after line 116):
 
@@ -154,7 +175,7 @@ In `scripts/imss_seed_data.py`, add after the events processing block (after lin
         console.print("[green]Loaded fundamentals for BBRI[/]")
 ```
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add -f imss/db/models.py imss/db/__init__.py data/seed_events/bbri_fundamentals.json scripts/imss_seed_data.py tests/imss/test_data/test_db.py
@@ -343,17 +364,41 @@ Market Cap: IDR {fundamentals['market_cap_trillion_idr']}T"""
     return base
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 5: Wire fundamentals through Tier1Agent.decide()**
+
+In `imss/agents/tier1/personas.py`, modify the `build_tier1_user_prompt()` call inside `Tier1Agent.decide()` (around line 155-167). Add the `fundamentals` kwarg — only Dr. Lim gets fundamentals:
+
+```python
+        # Pass fundamentals only to Dr. Lim
+        agent_fundamentals = market_state.get("fundamentals") if self.persona_config.key == "dr_lim" else None
+
+        user_prompt = build_tier1_user_prompt(
+            step=step,
+            simulated_date=market_state.get("date", ""),
+            cash=self.working_memory.cash,
+            holdings_formatted=holdings_formatted,
+            portfolio_value=portfolio_value,
+            unrealized_pnl=unrealized_pnl,
+            stock_symbol=stock,
+            ohlcv=ohlcv,
+            pct_change_5d=market_state.get("pct_change_5d", 0),
+            pct_change_20d=market_state.get("pct_change_20d", 0),
+            events_formatted=events_formatted,
+            fundamentals=agent_fundamentals,
+        )
+```
+
+- [ ] **Step 6: Run tests to verify they pass**
 
 Run: `python3 -m pytest tests/imss/test_agents/test_tier1_new.py::TestDrLimPersona -v && python3 -m pytest tests/imss/test_agents/test_tier1_new.py::TestTier1PromptFundamentals -v`
 Expected: ALL PASS
 
-- [ ] **Step 6: Run all existing tests to verify no regressions**
+- [ ] **Step 7: Run all existing tests to verify no regressions**
 
 Run: `python3 -m pytest tests/imss/ -v`
 Expected: ALL 29 existing tests + 5 new tests PASS
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -f imss/agents/tier1/personas.py imss/llm/prompts/tier1_decision.py tests/imss/test_agents/test_tier1_new.py
@@ -791,39 +836,69 @@ class TestNewArchetypes:
 class TestDecisionLatency:
     @pytest.mark.asyncio
     async def test_latency_filters_recent_events(self):
-        """Agent with decision_latency=2 ignores events from current and previous step."""
+        """Agent with decision_latency=2 only sees events where step - _step >= 2."""
+        from unittest.mock import AsyncMock
+        from imss.llm.router import LLMResponse
+
         agents = create_tier2_agents("dividend_holder", 1, seed=99)
         agent = agents[0]
         assert agent.decision_latency == 2
+
+        mock_response = LLMResponse(
+            content='{"action": "HOLD", "stock": "BBRI", "quantity": 0, "confidence": 0.5, "reasoning": "hold", "sentiment_update": 0.0}',
+            parsed_json={"action": "HOLD", "stock": "BBRI", "quantity": 0, "confidence": 0.5, "reasoning": "hold", "sentiment_update": 0.0},
+            input_tokens=50, output_tokens=25, model="glm-5", latency_ms=50,
+        )
+        mock_router = AsyncMock()
+        mock_router.call = AsyncMock(return_value=mock_response)
+        agent.set_router(mock_router)
 
         events = [
             {"title": "Old event", "category": "EARNINGS", "_step": 0, "sentiment_score": 0.5},
             {"title": "Recent event", "category": "NEWS", "_step": 2, "sentiment_score": -0.3},
         ]
-        # At step 2, only events from step <= 0 should pass (step - _step >= latency)
-        # Old event: 2 - 0 = 2 >= 2 ✓
-        # Recent event: 2 - 2 = 0 < 2 ✗
-        # Agent has no router, so it will HOLD, but we verify the event filtering
-        # by checking that the prompt building doesn't crash
-        action = await agent.decide(
+        # At step 2: old event passes (2-0=2 >= 2), recent filtered (2-2=0 < 2)
+        await agent.decide(
             {"symbol": "BBRI", "ohlcv": {"close": 5000}, "pct_change_1d": 0, "pct_change_5d": 0},
             events, step=2,
         )
-        assert action.action == "HOLD"  # No router = HOLD
+        # Verify the LLM prompt only got the old event (events_brief should have "Old event")
+        call_args = mock_router.call.call_args
+        user_prompt = call_args.kwargs.get("user_prompt", call_args[1] if len(call_args) > 1 else "")
+        assert "Old event" in user_prompt
+        assert "Recent event" not in user_prompt
 
     @pytest.mark.asyncio
     async def test_zero_latency_passes_all_events(self):
-        """Agent with decision_latency=0 receives all events."""
+        """Agent with decision_latency=0 receives all events (nothing filtered)."""
+        from unittest.mock import AsyncMock
+        from imss.llm.router import LLMResponse
+
         agents = create_tier2_agents("momentum_chaser", 1, seed=99)
         agent = agents[0]
         assert agent.decision_latency == 0
 
-        action = await agent.decide(
-            {"symbol": "BBRI", "ohlcv": {"close": 5000}, "pct_change_1d": 0, "pct_change_5d": 0},
-            [{"title": "Event", "category": "NEWS", "_step": 2, "sentiment_score": 0.1}],
-            step=2,
+        mock_response = LLMResponse(
+            content='{"action": "HOLD", "stock": "BBRI", "quantity": 0, "confidence": 0.5, "reasoning": "hold", "sentiment_update": 0.0}',
+            parsed_json={"action": "HOLD", "stock": "BBRI", "quantity": 0, "confidence": 0.5, "reasoning": "hold", "sentiment_update": 0.0},
+            input_tokens=50, output_tokens=25, model="glm-5", latency_ms=50,
         )
-        assert action.action == "HOLD"  # No router = HOLD
+        mock_router = AsyncMock()
+        mock_router.call = AsyncMock(return_value=mock_response)
+        agent.set_router(mock_router)
+
+        events = [
+            {"title": "Event A", "category": "NEWS", "_step": 2, "sentiment_score": 0.1},
+            {"title": "Event B", "category": "MACRO", "_step": 2, "sentiment_score": 0.2},
+        ]
+        await agent.decide(
+            {"symbol": "BBRI", "ohlcv": {"close": 5000}, "pct_change_1d": 0, "pct_change_5d": 0},
+            events, step=2,
+        )
+        call_args = mock_router.call.call_args
+        user_prompt = call_args.kwargs.get("user_prompt", call_args[1] if len(call_args) > 1 else "")
+        # Both events should be present since latency=0
+        assert "Event A" in user_prompt
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -866,7 +941,7 @@ In `imss/agents/tier2/archetypes.py`, add latency filtering at the start of `dec
             events = [e for e in events if step - e.get("_step", 0) >= self.decision_latency]
 ```
 
-So lines 82-88 become:
+So lines 77-88 become:
 ```python
     async def decide(
         self,
@@ -874,19 +949,28 @@ So lines 82-88 become:
         events: list[dict[str, Any]],
         step: int,
     ) -> AgentAction:
-        if self._router is None:
-            return default_hold_action(self.id, market_state.get("symbol", "BBRI"), step)
-
-        # Apply decision latency — filter out events too recent for this agent
+        # Apply decision latency BEFORE router check — filter too-recent events
         if self.decision_latency > 0:
             events = [e for e in events if step - e.get("_step", 0) >= self.decision_latency]
+
+        if self._router is None:
+            return default_hold_action(self.id, market_state.get("symbol", "BBRI"), step)
 
         stock = market_state.get("symbol", "BBRI")
 ```
 
-- [ ] **Step 5: Update default archetypes in SimulationConfig**
+- [ ] **Step 5: Update defaults in SimulationConfig**
 
-In `imss/config.py`, change line 65-69 from:
+In `imss/config.py`, change `tier1_personas` default (line 63) from:
+```python
+    tier1_personas: list[str] = ["pak_budi", "sarah", "andi"]
+```
+To:
+```python
+    tier1_personas: list[str] = ["pak_budi", "sarah", "andi", "dr_lim", "marketbot"]
+```
+
+And change `tier2_archetypes` (line 65-69) from:
 
 ```python
     tier2_archetypes: list[str] = [
@@ -1048,19 +1132,23 @@ class SimulationResult(BaseModel):
 
 - [ ] **Step 3: Add fundamentals loading and P&L tracking to run_single()**
 
-In `imss/simulation/engine.py`, add `StockFundamentals` import (line 22 area):
+In `imss/simulation/engine.py`, add `StockFundamentals` to the existing import (line 22 area):
 
 ```python
 from imss.db.models import (
     AgentConfig,
     Base,
-    CausalLink,
     Event,
     SimulationRun,
     SimulationStepLog,
     StockFundamentals,
     StockOHLCV,
 )
+```
+
+Also add `timezone` to the datetime import at top of file:
+```python
+from datetime import date, datetime, timezone
 ```
 
 After loading market data (after line 136, `market_data = MarketData(...)`), add fundamentals loading:
@@ -1151,10 +1239,26 @@ To:
 
 - [ ] **Step 6: Add CostTracker snapshot for accurate per-run costs**
 
-At the start of `run_single()` (after seed computation), add:
+At the start of `run_single()` (right after the method opens, before DB engine creation), add:
 
 ```python
+        seed = 42 + run_number
         cost_pre = self._router.cost_tracker.snapshot()
+```
+
+Also update the early-return FAILED path (around line 123-127) to use delta-based costs:
+
+```python
+        if not rows:
+            logger.error("No price data found for %s", config.target_stocks[0])
+            await engine.dispose()
+            cost_post = self._router.cost_tracker.snapshot()
+            return SimulationResult(
+                simulation_id="", status="FAILED", total_steps=0,
+                agents_final=[], total_llm_calls=cost_post["total_calls"] - cost_pre["total_calls"],
+                total_tokens_used=0, estimated_cost_usd=0, json_parse_success_rate=0,
+                step_count=0, run_number=run_number,
+            )
 ```
 
 In the finalize section (line 217), change from reading `cost_tracker` directly to computing deltas:
@@ -1222,7 +1326,7 @@ Replace the DB update (lines 230-242) with:
                     .where(SimulationRun.id == sim_id)
                     .values(
                         status="COMPLETED",
-                        completed_at=datetime.now(datetime.UTC) if hasattr(datetime, 'UTC') else datetime.utcnow(),
+                        completed_at=datetime.now(tz=timezone.utc),
                         total_llm_calls=run_llm_calls,
                         total_tokens_used=run_tokens,
                         estimated_cost_usd=run_cost,
@@ -1319,7 +1423,7 @@ class TestAggregateRuns:
         results = [_make_result(i) for i in range(3)]
         multi = aggregate_runs(results)
         stats = multi.agent_stats["tier1_pak_budi"]
-        assert stats.num_runs == 3
+        assert stats.num_samples == 3
         assert stats.mean_final_cash > 0
         assert stats.std_final_cash >= 0
         assert stats.mean_pnl_pct > 0
@@ -1369,7 +1473,7 @@ class AgentRunStats(BaseModel):
     """Aggregated statistics for one agent type across multiple runs."""
 
     persona_type: str
-    num_runs: int
+    num_samples: int
     mean_final_cash: float
     std_final_cash: float
     mean_pnl_pct: float
@@ -1416,7 +1520,7 @@ def aggregate_runs(results: list[SimulationResult]) -> MultiRunResult:
         n = len(agent_data)
         agent_stats[persona_type] = AgentRunStats(
             persona_type=persona_type,
-            num_runs=n,
+            num_samples=n,
             mean_final_cash=float(np.mean(cash_values)),
             std_final_cash=float(np.std(cash_values)) if n > 1 else 0.0,
             mean_pnl_pct=float(np.mean(pnl_values)),
@@ -1575,12 +1679,14 @@ async def test_different_seeds_produce_different_tier3(tmp_path):
 
         result = await sim_engine.run_multi(config)
 
-    # With different seeds, Tier 3 random agents should produce different final cash values
+    # Different seeds cause different initial cash for Tier 3 agents (via create_tier3_agents seed param).
+    # This cascades into different BUY quantities (qty = cash * pct / close).
+    # Note: RandomWalkAgent._get_rng() uses hash(self.id) not the run seed, so the
+    # difference comes from initial cash, not from action randomness.
     r0_cash = {a.id: a.final_cash for a in result.individual_results[0].agents_final}
     r1_cash = {a.id: a.final_cash for a in result.individual_results[1].agents_final}
-    # At least some agents should differ (random_walk agents use seed-based RNG)
-    differences = sum(1 for aid in r0_cash if r0_cash.get(aid) != r1_cash.get(aid))
-    assert differences > 0, "Different seeds should produce different Tier 3 outcomes"
+    differences = sum(1 for aid in r0_cash if abs(r0_cash.get(aid, 0) - r1_cash.get(aid, 0)) > 1.0)
+    assert differences > 0, "Different seeds should produce different Tier 3 initial cash → different outcomes"
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
