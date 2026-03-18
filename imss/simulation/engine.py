@@ -308,3 +308,17 @@ class SimulationEngine:
             step_count=len(step_logs),
             run_number=run_number,
         )
+
+    async def run_multi(
+        self,
+        config: SimulationConfig,
+        on_step: Callable | None = None,
+    ) -> "MultiRunResult":
+        """Execute N sequential simulation runs and aggregate results."""
+        from imss.simulation.aggregator import MultiRunResult, aggregate_runs  # lazy import to avoid circular
+
+        results = []
+        for i in range(config.num_parallel_runs):
+            result = await self.run_single(config, run_number=i, on_step=on_step)
+            results.append(result)
+        return aggregate_runs(results)
