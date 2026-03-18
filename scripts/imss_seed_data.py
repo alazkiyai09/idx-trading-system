@@ -114,6 +114,26 @@ async def seed_database() -> None:
                     progress.advance(task)
 
     console.print(f"[green]Loaded {len(events_raw)} events into DB and ChromaDB[/]")
+
+    # 6. Load fundamentals
+    fundamentals_path = Path("data/seed_events/bbri_fundamentals.json")
+    if fundamentals_path.exists():
+        console.print("[bold blue]Loading fundamentals data...[/]")
+        fund_data = json.loads(fundamentals_path.read_text())
+        from imss.db.models import StockFundamentals
+        async with session_factory() as session:
+            async with session.begin():
+                session.add(StockFundamentals(
+                    symbol=fund_data["symbol"],
+                    period=fund_data["period"],
+                    pe_ratio=fund_data["pe_ratio"],
+                    pb_ratio=fund_data["pb_ratio"],
+                    dividend_yield_pct=fund_data["dividend_yield_pct"],
+                    roe_pct=fund_data["roe_pct"],
+                    market_cap_trillion_idr=fund_data["market_cap_trillion_idr"],
+                ))
+        console.print("[green]Loaded fundamentals for BBRI[/]")
+
     await engine.dispose()
     console.print("[bold green]Seed complete![/]")
 

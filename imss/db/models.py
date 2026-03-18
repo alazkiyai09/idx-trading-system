@@ -148,6 +148,19 @@ class SimulationStepLog(Base):
     )
 
 
+class StockFundamentals(Base):
+    __tablename__ = "stock_fundamentals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(10), index=True)
+    period: Mapped[str] = mapped_column(String(10))  # e.g. "2024-Q2"
+    pe_ratio: Mapped[float] = mapped_column(Float)
+    pb_ratio: Mapped[float] = mapped_column(Float)
+    dividend_yield_pct: Mapped[float] = mapped_column(Float)
+    roe_pct: Mapped[float] = mapped_column(Float)
+    market_cap_trillion_idr: Mapped[float] = mapped_column(Float)
+
+
 # --- Database initialization ---
 
 async def get_engine(database_url: str):
