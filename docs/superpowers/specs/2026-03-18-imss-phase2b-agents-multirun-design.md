@@ -99,7 +99,7 @@ Only Dr. Lim receives this section. Other Tier 1 agents pass `fundamentals=None`
 
 ### 2.4 Engine Integration
 
-`SimulationEngine.run_single()` loads `StockFundamentals` for the target stock at simulation start. The fundamentals dict is passed through `run_simulation_loop()` → Tier 1 agent `decide()` calls. Dr. Lim's `decide()` method forwards it to the prompt builder; other Tier 1 agents ignore it.
+`SimulationEngine.run_single()` loads `StockFundamentals` for the target stock at simulation start. The fundamentals dict is injected into `market_state["fundamentals"]` as `dict | None`. This avoids changing the `BaseAgent.decide(market_state, events, step)` signature. Dr. Lim's `decide()` reads `market_state["fundamentals"]` and passes it to the prompt builder; all other Tier 1 agents ignore the field.
 
 ---
 
@@ -135,13 +135,23 @@ Added to `PERSONAS` dict:
 
 `MarketBotAgent` subclass of `Tier1Agent` with overridden `decide()`:
 
-1. **Rule-based direction:** Read `market_state["aggregate_order_imbalance"]` from previous step.
+1. **Rule-based direction:** Read `market_state["prev_aggregate_order_imbalance"]` (see Section 3.4 for loop changes).
    - If imbalance > 0.1 (net buying pressure) → pre-determined direction = SELL
    - If imbalance < -0.1 (net selling pressure) → pre-determined direction = BUY
    - If abs(imbalance) <= 0.1 → pre-determined direction = HOLD
-2. **Volatility gate:** If 5-day price change exceeds ±5%, reduce position sizing by 50% (simulates "widening spread").
+2. **Volatility gate:** If `market_state["pct_change_5d"]` exceeds ±5%, reduce position sizing by 50% (simulates "widening spread").
 3. **LLM reasoning:** Call LLM with the pre-determined direction, asking for quantity, confidence, and reasoning justification.
 4. **Return:** `AgentAction` with the rule-based direction but LLM-reasoned quantity/confidence.
+
+### 3.4 Loop Changes for MarketBot
+
+**File:** `imss/simulation/loop.py`
+
+`run_simulation_loop()` must maintain a `prev_aggregate_order_imbalance` variable, initialized to `0.0`. After each step's order resolution and aggregate computation, store the computed `aggregate_order_imbalance` value. At the start of the next step, inject it into `market_state["prev_aggregate_order_imbalance"]`.
+
+This ensures MarketBot reads the **previous** step's imbalance, not the current step's (which hasn't been computed yet).
+
+Note: `create_tier1_agent()` must return `MarketBotAgent` when `persona_key == "marketbot"`. Import added to `imss/agents/tier1/__init__.py`.
 
 ### 3.3 Dedicated Prompt
 
@@ -189,9 +199,19 @@ Added to `ARCHETYPES` dict in `imss/agents/tier2/archetypes.py`:
 
 With `tier2_per_archetype=4`, total Tier 2 agents increases from 12 to 20.
 
-### 4.4 Propagation Delay
+### 4.4 Decision Latency Implementation
 
-No changes to `propagation.py`. The existing `PROPAGATION_DELAYS` matrix applies uniformly to all Tier 2 agents via MEDIUM access. The `decision_latency` field on the archetype config is a separate concept — it controls how many steps the agent waits before acting on received events, implemented in `Tier2Agent.decide()` by filtering events older than `current_step - decision_latency`.
+No changes to `propagation.py`. The existing `PROPAGATION_DELAYS` matrix applies uniformly to all Tier 2 agents via MEDIUM access.
+
+The `decision_latency` field is a **separate** concept from propagation delay — it controls how many steps the agent waits before acting on received events. **This is NOT implemented in Phase 1** (all existing archetypes have `decision_latency=0`).
+
+**Required change in `Tier2Agent.decide()`** (`imss/agents/tier2/archetypes.py`): Before processing events, filter them:
+```python
+if self.decision_latency > 0:
+    events = [e for e in events if step - e.get("_step", 0) >= self.decision_latency]
+```
+
+This requires the simulation loop to tag each event with `_step` (the step number when the event was first distributed to this tier). Add `_step` tagging in `distribute_events()` or in the loop when events are passed to agents.
 
 ---
 
@@ -201,11 +221,23 @@ No changes to `propagation.py`. The existing `PROPAGATION_DELAYS` matrix applies
 
 Each run gets seed `base_seed + run_number` (base_seed = 42 by default).
 
+**Seed computation in `run_single()`:**
+```python
+seed = 42 + run_number
+```
+
+**Modified factory calls in `run_single()`:**
+```python
+# Currently: create_tier2_agents(archetype, config.tier2_per_archetype)
+# Changed to: create_tier2_agents(archetype, config.tier2_per_archetype, seed=seed)
+# Currently: create_tier3_agents(config.tier3_total, config.tier3_distribution)
+# Changed to: create_tier3_agents(config.tier3_total, config.tier3_distribution, seed=seed)
+```
+
 **Affected call sites:**
 - `create_tier2_agents(archetype_key, count, seed)` — randomizes cash, risk tolerance
 - `create_tier3_agents(total, distribution, seed)` — randomizes cash, agent behavior (RandomWalkAgent)
 - `run_simulation_loop(..., seed)` — passed to `distribute_events()` rng for delay jitter
-- `SimulationEngine.run_single(config, run_number)` — computes seed, passes downstream
 
 ### 5.2 run_multi() Method
 
@@ -221,6 +253,16 @@ async def run_multi(self, config: SimulationConfig, on_step=None) -> MultiRunRes
 ```
 
 Runs execute **sequentially** to avoid SQLite write contention. The `runs_batch_size` config field is reserved for future async batching with PostgreSQL.
+
+**CostTracker reset:** The `LLMRouter` has a single shared `CostTracker`. Before each `run_single()` call within `run_multi()`, snapshot the tracker state (total_calls, total_input_tokens, etc.). After the run completes, compute deltas to populate the per-run `SimulationResult` cost fields. This ensures individual results have accurate per-run costs, not cumulative totals.
+
+Implementation: Add `CostTracker.snapshot() -> dict` and compute deltas in `run_single()`:
+```python
+pre = self._router.cost_tracker.snapshot()
+# ... run simulation ...
+post = self._router.cost_tracker.snapshot()
+llm_calls = post["total_calls"] - pre["total_calls"]
+```
 
 ### 5.3 Aggregation
 
@@ -248,6 +290,9 @@ class MultiRunResult(BaseModel):
     mean_estimated_cost_usd: float
     total_batch_cost_usd: float
     agent_stats: dict[str, AgentRunStats]  # keyed by persona_type
+
+# Also add to SimulationResult:
+#   run_number: int = 0  (for traceability in multi-run aggregation)
 ```
 
 **Function:** `aggregate_runs(results: list[SimulationResult]) -> MultiRunResult`
@@ -255,9 +300,11 @@ class MultiRunResult(BaseModel):
 Logic:
 1. Group `AgentSummary` objects across all runs by `persona_type`
 2. Compute mean/std for `final_cash` and `pnl_pct` per group
-3. Action rates computed from step logs: count BUY/SELL/HOLD per agent type across all runs, divide by total actions
+3. Action rates computed from **post-resolution** step logs: count BUY/SELL/HOLD per agent type across all runs, divide by total actions
 4. Sum costs across runs for `total_batch_cost_usd`
 5. Generate shared `simulation_id` UUID for the batch
+
+**Note:** The aggregator is designed to be consumed by a future Observer agent. Its output model (`MultiRunResult`) should be treated as the Observer's input contract, not final user-facing output.
 
 ### 5.4 Config Changes
 
@@ -268,6 +315,28 @@ In `SimulationConfig`:
 ### 5.5 Step Log Enhancement
 
 Each `SimulationStepLog` already has a `run_number` column. The aggregator reads step logs from `individual_results` (in-memory), not from the database.
+
+### 5.6 P&L Calculation Fix
+
+Phase 1 left `pnl_pct` hardcoded to `0.0` (pending item P1). This Phase 2B fixes it to make aggregated stats meaningful.
+
+**In `SimulationEngine.run_single()`:** Record each agent's initial portfolio value (cash + holdings * close prices on day 1) at simulation start. At completion, compute:
+```python
+pnl_pct = ((final_value - initial_value) / initial_value) * 100
+```
+Store in `AgentSummary.pnl_pct`.
+
+### 5.7 Cost Estimates
+
+With the expanded agent population (5 T1 + 20 T2 + 50 T3 = 75 agents):
+
+| Metric | Phase 1 (65 agents) | Phase 2B (75 agents) | Change |
+|--------|--------------------|--------------------|--------|
+| LLM calls/step | 15 (3 T1 + 12 T2) | 25 (5 T1 + 20 T2) | +67% |
+| Est. cost/run | ~$0.03 | ~$0.05 | +67% |
+| Est. cost/5-run batch | N/A | ~$0.25 | — |
+
+The `$5 cost alert threshold` remains appropriate. Smoke test target (2 min) should still hold — the extra agents add ~10 LLM calls per step but the mocked-LLM smoke test is not affected.
 
 ---
 
@@ -292,11 +361,11 @@ Each `SimulationStepLog` already has a `run_number` column. The aggregator reads
 |------|---------|
 | `imss/agents/tier1/personas.py` | Add `dr_lim` to PERSONAS |
 | `imss/agents/tier1/__init__.py` | Export `MarketBotAgent` |
-| `imss/agents/tier2/archetypes.py` | Add `dividend_holder`, `sector_rotator` to ARCHETYPES |
+| `imss/agents/tier2/archetypes.py` | Add `dividend_holder`, `sector_rotator` to ARCHETYPES; implement `decision_latency` filtering in `Tier2Agent.decide()` |
 | `imss/db/models.py` | Add `StockFundamentals` table |
 | `imss/config.py` | Update `tier2_archetypes` default list |
-| `imss/simulation/engine.py` | Add `run_multi()`, seed propagation, fundamentals loading |
-| `imss/simulation/loop.py` | Accept `seed` param, propagate to events distribution |
+| `imss/simulation/engine.py` | Add `run_multi()`, seed propagation, fundamentals loading, P&L calculation, CostTracker snapshots |
+| `imss/simulation/loop.py` | Accept `seed` param, carry forward `prev_aggregate_order_imbalance` into `market_state`, tag events with `_step` |
 | `imss/llm/prompts/tier1_decision.py` | Add optional `fundamentals` param to user prompt |
 | `scripts/imss_run_backtest.py` | Add `--runs` CLI flag, multi-run output |
 | `scripts/imss_smoke_test.py` | Add multi-run smoke test case |
