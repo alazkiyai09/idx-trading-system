@@ -146,3 +146,28 @@ class TestMarketBotAgent:
         }
         action = await agent.decide(market_state, [], 1)
         assert action.action == "HOLD"
+
+    @pytest.mark.asyncio
+    async def test_marketbot_reduces_sizing_in_high_volatility(self):
+        """Volatility gate halves quantity when 5-day change exceeds 5%."""
+        agent = create_tier1_agent("marketbot")
+
+        mock_response = LLMResponse(
+            content='{"action": "SELL", "stock": "BBRI", "quantity": 2000, "confidence": 0.7, "reasoning": "providing liquidity", "sentiment_update": 0.0}',
+            parsed_json={"action": "SELL", "stock": "BBRI", "quantity": 2000, "confidence": 0.7, "reasoning": "providing liquidity", "sentiment_update": 0.0},
+            input_tokens=100, output_tokens=50, model="glm-5", latency_ms=100,
+        )
+        mock_router = AsyncMock()
+        mock_router.call = AsyncMock(return_value=mock_response)
+        agent.set_router(mock_router)
+
+        market_state = {
+            "symbol": "BBRI", "date": "2024-07-01",
+            "ohlcv": {"open": 5100, "high": 5200, "low": 5050, "close": 5150, "volume": 80000000},
+            "prices": {"BBRI": 5150},
+            "pct_change_5d": 7.0,  # > 5% triggers volatility gate
+            "prev_aggregate_order_imbalance": 0.5,
+        }
+        action = await agent.decide(market_state, [], 1)
+        assert action.action == "SELL"
+        assert action.quantity == 1000  # halved from 2000, still lot-aligned
