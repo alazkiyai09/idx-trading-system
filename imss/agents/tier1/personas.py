@@ -91,6 +91,26 @@ PERSONAS: dict[str, PersonaConfig] = {
         initial_cash=100_000_000,
         initial_holdings={},
     ),
+    "dr_lim": PersonaConfig(
+        key="dr_lim",
+        name="Dr. Lim",
+        description="Independent equity analyst with PhD in finance. Deep fundamental analysis. Goes against the crowd when valuations are extreme.",
+        behavioral_rules=(
+            "- You are a contrarian — you buy when fear is high and valuations are low\n"
+            "- You evaluate stocks on P/E, P/B, dividend yield, and ROE fundamentals\n"
+            "- You are patient — you hold losing positions for months if your thesis is intact\n"
+            "- You ignore short-term noise and social media hype\n"
+            "- You increase position sizes when fear is high and valuations are low\n"
+            "- You are a statistical thinker who believes in mean reversion\n"
+            "- When the market is euphoric and prices are high, you reduce positions"
+        ),
+        risk_tolerance=0.4,
+        max_allocation=35,
+        stop_loss_pct=20,
+        holding_period="months",
+        initial_cash=5_000_000_000,
+        initial_holdings={"BBRI": 300_000},
+    ),
 }
 
 
@@ -152,6 +172,10 @@ class Tier1Agent(BaseAgent):
         )
 
         ohlcv = market_state.get("ohlcv", {})
+
+        # Pass fundamentals only to Dr. Lim
+        agent_fundamentals = market_state.get("fundamentals") if self.persona_config.key == "dr_lim" else None
+
         user_prompt = build_tier1_user_prompt(
             step=step,
             simulated_date=market_state.get("date", ""),
@@ -164,6 +188,7 @@ class Tier1Agent(BaseAgent):
             pct_change_5d=market_state.get("pct_change_5d", 0),
             pct_change_20d=market_state.get("pct_change_20d", 0),
             events_formatted=events_formatted,
+            fundamentals=agent_fundamentals,
         )
 
         response = await self._router.call(

@@ -49,8 +49,9 @@ def build_tier1_user_prompt(
     pct_change_5d: float,
     pct_change_20d: float,
     events_formatted: str,
+    fundamentals: dict | None = None,
 ) -> str:
-    return f"""=== SIMULATION STEP {step} — Date: {simulated_date} ===
+    base = f"""=== SIMULATION STEP {step} — Date: {simulated_date} ===
 
 YOUR CURRENT PORTFOLIO:
 - Cash: IDR {cash:,.0f}
@@ -63,6 +64,17 @@ MARKET DATA TODAY:
 5-day change: {pct_change_5d:+.2f}% | 20-day change: {pct_change_20d:+.2f}%
 
 NEW EVENTS TODAY:
-{events_formatted if events_formatted else "No significant events today."}
+{events_formatted if events_formatted else "No significant events today."}"""
 
-Make your investment decision."""
+    if fundamentals:
+        base += f"""
+
+== Fundamental Data ==
+P/E Ratio: {fundamentals['pe_ratio']}
+P/B Ratio: {fundamentals['pb_ratio']}
+Dividend Yield: {fundamentals['dividend_yield_pct']}%
+ROE: {fundamentals['roe_pct']}%
+Market Cap: IDR {fundamentals['market_cap_trillion_idr']}T"""
+
+    base += "\n\nMake your investment decision."
+    return base
