@@ -14,7 +14,7 @@ class IMSSSettings(BaseSettings):
     # LLM
     glm_api_key: str = Field(alias="GLM_API_KEY")
     glm_base_url: str = Field(
-        default="https://api.z.ai/api/paas/v4/", alias="IMSS_GLM_BASE_URL"
+        default="https://api.z.ai/api/anthropic", alias="IMSS_GLM_BASE_URL"
     )
     glm_model: str = Field(default="glm-5", alias="IMSS_GLM_MODEL")
 

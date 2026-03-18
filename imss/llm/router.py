@@ -1,4 +1,4 @@
-"""LLM Router — async OpenAI-compatible client for GLM-5."""
+"""LLM Router — async Anthropic-compatible client for GLM-5."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import re
 import time
 from dataclasses import dataclass, field
 
-from openai import AsyncOpenAI
+import anthropic
 
 from imss.config import IMSSSettings
 
@@ -92,12 +92,12 @@ def parse_agent_json(text: str) -> dict | None:
 
 
 class LLMRouter:
-    """Async LLM router for GLM-5 via OpenAI-compatible API."""
+    """Async LLM router for GLM-5 via Anthropic-compatible API."""
 
     def __init__(self, settings: IMSSSettings | None = None):
         if settings is None:
             settings = IMSSSettings()
-        self._client = AsyncOpenAI(
+        self._client = anthropic.AsyncAnthropic(
             api_key=settings.glm_api_key,
             base_url=settings.glm_base_url,
             timeout=settings.llm_request_timeout,
@@ -122,10 +122,10 @@ class LLMRouter:
         for attempt in range(self._max_retries):
             try:
                 start = time.monotonic()
-                response = await self._client.chat.completions.create(
+                response = await self._client.messages.create(
                     model=self._model,
+                    system=system_prompt,
                     messages=[
-                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=temperature,
@@ -133,10 +133,9 @@ class LLMRouter:
                 )
                 latency = (time.monotonic() - start) * 1000
 
-                content = response.choices[0].message.content or ""
-                usage = response.usage
-                input_tokens = usage.prompt_tokens if usage else 0
-                output_tokens = usage.completion_tokens if usage else 0
+                content = response.content[0].text if response.content else ""
+                input_tokens = response.usage.input_tokens if response.usage else 0
+                output_tokens = response.usage.output_tokens if response.usage else 0
 
                 # Track costs
                 self.cost_tracker.total_calls += 1

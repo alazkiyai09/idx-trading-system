@@ -12,13 +12,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-import chromadb
 from rich.console import Console
 from rich.progress import Progress
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from imss.config import get_settings
-from imss.data.embedder import ZhipuEmbedder
 from imss.data.price_feed import fetch_idx_prices, store_prices
 from imss.db.models import Base, Event, EventEntity
 
@@ -54,16 +52,7 @@ async def seed_database() -> None:
     console.print("[bold blue]Loading seed events...[/]")
     events_raw = json.loads(SEED_EVENTS_PATH.read_text())
 
-    # 4. Initialize embedder and ChromaDB
-    console.print("[bold blue]Initializing embedder and ChromaDB...[/]")
-    embedder = ZhipuEmbedder(settings)
-    chroma_client = chromadb.PersistentClient(path=settings.chroma_persist_dir)
-    collection = chroma_client.get_or_create_collection(
-        name="event_embeddings",
-        metadata={"hnsw:space": "cosine"},
-    )
-
-    # 5. Process events
+    # 4. Store events in DB (ChromaDB embeddings deferred — requires embedding API)
     with Progress() as progress:
         task = progress.add_task("Processing events...", total=len(events_raw))
         async with session_factory() as session:
@@ -72,7 +61,6 @@ async def seed_database() -> None:
                     event_id = str(uuid.uuid4())
                     ts = datetime.fromisoformat(evt_data["timestamp"])
 
-                    # Store in DB
                     event = Event(
                         id=event_id,
                         timestamp=ts,
@@ -95,25 +83,9 @@ async def seed_database() -> None:
                             )
                         )
 
-                    # Embed and store in ChromaDB
-                    embed_text = f"{evt_data['title']}. {evt_data['summary']}"
-                    embedding = embedder.embed_text(embed_text)
-                    collection.add(
-                        ids=[event_id],
-                        documents=[embed_text],
-                        embeddings=[embedding],
-                        metadatas=[{
-                            "event_id": event_id,
-                            "category": evt_data["category"],
-                            "timestamp": evt_data["timestamp"],
-                            "sentiment": evt_data["sentiment_score"],
-                            "magnitude": evt_data["magnitude_score"],
-                        }],
-                    )
-
                     progress.advance(task)
 
-    console.print(f"[green]Loaded {len(events_raw)} events into DB and ChromaDB[/]")
+    console.print(f"[green]Loaded {len(events_raw)} events into DB[/]")
 
     # 6. Load fundamentals
     fundamentals_path = Path("data/seed_events/bbri_fundamentals.json")
