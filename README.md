@@ -1,53 +1,74 @@
 # IDX Trading System
 
-Trading and research workspace for Indonesia Stock Exchange equities, with a FastAPI backend, Streamlit dashboard, daily data pipeline, paper trading, screening, sentiment, and offline ML model management.
+AI-assisted trading and research workspace for Indonesia Stock Exchange (IDX) equities, built with FastAPI + Streamlit and optimized for daily operations.
 
-## What Is In This Repo
+This repository now includes expanded production-style modules: asynchronous backtesting jobs, market enrichment analytics, persisted portfolio reconciliation, research preset promotion, and IMSS (IDX Market Swarm Simulator) run orchestration.
 
-- FastAPI service for stock data, health, signals, simulation, sentiment, portfolio, and ML prediction routes
-- Streamlit dashboard with top navigation and inline page controls
-- SQLite-backed daily market data workflow
-- Paper trading and replay-style virtual trading
-- Offline ML training pipeline with artifact publishing and model management
-- Automated test coverage across unit, integration, dashboard, and Playwright E2E layers
+## Highlights
 
-## Current Product Shape
+- Daily-data trading system with SQLite-backed market storage (`data/trading.db`)
+- FastAPI backend with route groups for stocks, signals, sentiment, prediction, simulation, backtest, market enrichment, and IMSS
+- Streamlit multipage dashboard with 12 feature pages and shared service layer
+- Signal generation, technical/risk analysis, and paper-trading simulation
+- Offline ML model training, artifact management, and prediction APIs
+- Research workspaces (`autoscreener`, `automontecarlo`, `autoresearch`) with preset promotion flow
+- IMSS multi-agent simulation package with background job lifecycle APIs and dashboard board/command builder
+- Python unit/integration/dashboard tests plus Playwright E2E coverage
 
-Main dashboard modules:
+## Product Modules
 
-- `Home`: system status, data freshness, desk actions, manual daily refresh
-- `Screener`: inline filters and signal scanning
-- `Stock Detail`: price, technicals, sentiment, flow, and analysis views
-- `Market Overview`: market breadth and summary views
-- `Sentiment`: article-based sentiment analysis
-- `Virtual Trading`: beta paper trading and replay workflow
-- `ML Prediction & Analysis`: inference, comparison, Monte Carlo, and technical overlays
-- `Settings -> Model Ops`: training readiness, batch training, artifact inventory, upload/delete, and background training commands
+### Dashboard pages
 
-Important current behavior:
+- `Home` (`dashboard/app.py`): health, freshness, and operator overview
+- `01_screener.py`: filter-driven stock screening and signal scan workflows
+- `02_stock_detail.py`: chart + technical + sentiment + flow + risk views
+- `03_sentiment.py`: sentiment fetch, cleanup, and thematic views
+- `04_virtual_trading.py`: simulation sessions and order/replay controls
+- `05_settings.py`: model operations, training readiness, and artifact management
+- `06_market_overview.py`: market breadth, leaders, and flow screener surfaces
+- `07_ml_prediction.py`: prediction, correlation, Monte Carlo, and technical overlays
+- `08_backtesting.py`: async backtest launch, polling, and results
+- `09_research_presets.py`: promote accepted research candidates into durable presets
+- `10_portfolio.py`: positions, trade history filters, and reconciliation analytics
+- `11_market_enrichment.py`: market -> sector -> symbol enrichment workflow
+- `12_imss.py`: background IMSS run launch, monitoring, logs, and summary inspection
 
-- Market data is treated as daily, not real-time
-- ML inference only works for symbols that already have trained artifacts in `data/ml_artifacts`
-- Training is offline and batch-oriented; the dashboard launches background jobs but does not do inline training on the prediction page
-- Model refresh is currently a retrain-and-replace workflow, not true incremental online learning
+### API route groups
+
+- `/health`: system health, freshness, and manual update hooks
+- `/stocks`: symbols, snapshot data, charts, foreign flow, broker datasets
+- `/analysis`, `/fundamental`: technical, signal, risk, and LLM-assisted analysis
+- `/signals`: scan and active signal feeds
+- `/portfolio`: summary, positions, and trade history feeds
+- `/simulation`: paper-trading session lifecycle and metrics
+- `/prediction`: training readiness, artifact management, inference, correlation, Monte Carlo
+- `/backtest`: synchronous runs and background backtest jobs
+- `/market-enrichment`: summary, foreign/domestic, industries, brokers, symbol diagnostics
+- `/imss`: background IMSS run lifecycle (`create`, `list`, `status`, `logs`, `summary`)
 
 ## Architecture
 
 ```text
-SQLite/Data Jobs -> FastAPI Read Models -> Streamlit Dashboard
-                     |                  |
-                     |                  -> Paper trading / replay / ML inference UI
-                     -> Signals / sentiment / prediction / health APIs
+Daily Jobs + SQLite (trading.db, imss.db)
+        |                      |
+        v                      v
+   FastAPI Route Layer   IMSS Simulation Engine
+        |                      |
+        +----------> Streamlit Dashboard <----------+
+                         (12 pages)
 ```
 
-Core areas:
+Core directories:
 
-- [`api/`](/mnt/data/Project/idx-trading-system/api): FastAPI entrypoint, routes, schemas, cache
-- [`dashboard/`](/mnt/data/Project/idx-trading-system/dashboard): Streamlit app, pages, shared UI components
-- [`core/`](/mnt/data/Project/idx-trading-system/core): analysis, execution, portfolio, ML pipeline, data logic
-- [`scripts/`](/mnt/data/Project/idx-trading-system/scripts): ingestion, metadata enrichment, training helpers
-- [`tests/`](/mnt/data/Project/idx-trading-system/tests): unit, integration, and dashboard tests
-- [`e2e/`](/mnt/data/Project/idx-trading-system/e2e): Playwright browser and API tests
+- `api/`: FastAPI app, routes, schemas, cache
+- `dashboard/`: Streamlit pages, components, API client services
+- `core/`: trading domain logic (analysis, signals, risk, execution, ML)
+- `backtest/`: backtest engines and walk-forward logic
+- `imss/`: self-contained multi-agent market simulator
+- `research/`: autoresearch, autoscreener, automontecarlo tooling
+- `scripts/`: ingestion, enrichment, training, and simulation job scripts
+- `tests/`, `e2e/`: Python + Playwright test coverage
+- `docs/project_context/`: maintainable context map and subsystem handoffs
 
 ## Quick Start
 
@@ -62,19 +83,31 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-If you want the full ML ensemble with `LSTM` and `CNN-LSTM`, install TensorFlow in the environment:
+Optional (for full TensorFlow-backed ensembles):
 
 ```bash
 python3 -m pip install tensorflow-cpu
 ```
 
-### 2. Run the API
+### 2. Configure environment
+
+Create `.env` (or export env vars directly). Common runtime variables:
+
+```bash
+API_URL=http://127.0.0.1:8000
+ENABLE_REAL_PREDICTION=true
+
+# IMSS / GLM
+GLM_API_KEY=your-key
+IMSS_GLM_BASE_URL=https://api.z.ai/api/anthropic
+IMSS_GLM_MODEL=glm-5
+```
+
+### 3. Run API and dashboard
 
 ```bash
 ENABLE_REAL_PREDICTION=true python3 -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
-
-### 3. Run the dashboard
 
 ```bash
 API_URL=http://127.0.0.1:8000 streamlit run dashboard/app.py --server.port 8501
@@ -84,100 +117,93 @@ Open:
 
 - Dashboard: `http://localhost:8501`
 - API: `http://localhost:8000`
-- API docs: `http://localhost:8000/docs`
+- OpenAPI: `http://localhost:8000/docs`
 
-## Data Workflow
+## Data and Enrichment Workflow
 
-The app is optimized for daily updates rather than intraday streaming.
+The platform is designed for daily refresh cycles (not intraday streaming).
 
-- Price history is stored in SQLite under `data/trading.db`
-- The dashboard exposes a manual refresh action for daily data
-- Expected cadence is after market close or by midnight Asia/Jakarta
-- Expensive stock list reads are served through cached API read models instead of full-table recalculation on every page load
+Typical operator sequence:
+
+1. Ingest/update prices and metadata
+2. Refresh enrichment datasets (IDX, IQPlus, Flow Klinik, Invezgo)
+3. Run optional ML retraining
+4. Operate dashboard/API with cached read models
 
 Useful scripts:
 
 ```bash
 python3 scripts/ingest_all_stocks.py
 python3 scripts/enrich_missing_metadata.py
+python3 scripts/sync_idx_enrichment.py
+python3 scripts/sync_flow_klinik_latest_snapshot.py --symbols ADRO,BBRI --snapshot-date 2026-03-11
+python3 scripts/sync_invezgo_latest_snapshot.py --symbols ADRO,BRMS --snapshot-date 2026-03-10
+python3 scripts/sync_iqplus_stock_broker_daily.py --symbols BBCA,BBRI
 ```
 
-## ML Model Workflow
+## ML and Research Workflows
 
-### Readiness
+### ML model lifecycle
 
-Use `Settings -> Model Ops -> Training` to inspect:
+- Train offline and store artifacts in `data/ml_artifacts/`
+- Track jobs in `data/training_jobs/`
+- Manage artifacts from `Settings -> Model Ops` or API
 
-- available history rows
-- minimum rows required
-- recommended rows
-- whether a symbol is `not_ready`, `limited`, or `ready`
-
-Current rule of thumb:
-
-- below minimum history: training blocked
-- minimum to recommended range: training allowed but lower trust
-- above recommended range: normal training
-
-### Train models
-
-Single or batch training is offline and writes artifacts to `data/ml_artifacts`.
-
-Dashboard path:
-
-- `Settings -> Model Ops -> Training -> Batch Training`
-
-Shell path:
+Example:
 
 ```bash
 bash scripts/run_training_in_background.sh ADRO
 LOOKBACK_DAYS=400 OVERWRITE=true bash scripts/run_training_in_background.sh ADRO BBCA TLKM
 ```
 
-Artifacts produced:
+### Research presets and autonomous iteration
 
-- `data/ml_artifacts/{SYMBOL}_ensemble.pkl`
-- `data/ml_artifacts/{SYMBOL}_ensemble.meta.json`
+- `09_research_presets.py` promotes accepted candidates from:
+  - `data/autoscreener*`
+  - `data/automontecarlo*`
+- `research/autoresearch/` supports LLM-driven strategy iteration
 
-Training job status is tracked in:
+Example:
 
-- `data/training_jobs/model_training_status.json`
-- `data/training_jobs/model_training_history.json`
+```bash
+python3 scripts/autoresearch.py init --workspace data/autoresearch_glm --agent-name codex --provider-name glm --model-name glm-5
+python3 scripts/autoresearch.py run --workspace data/autoresearch_glm --agent-name codex --provider glm --model glm-5 --data-backend sqlite --database-url sqlite:///data/trading.db --max-experiments 10
+```
 
-### Manage models
+## IMSS (IDX Market Swarm Simulator)
 
-Use `Settings -> Model Ops -> Model Management` to:
+IMSS is a separate simulation domain under `imss/` with its own database (`data/imss.db`) and background job orchestration.
 
-- list stored models
-- upload artifacts
-- delete artifacts
-- copy background training commands
+Current capabilities:
 
-### Refresh models
+- Three-tier agent architecture (Tier 1 personas, Tier 2 archetypes, Tier 3 heuristics)
+- Single-run and multi-run simulation execution
+- Background run lifecycle APIs under `/imss/runs*`
+- Dashboard operator page (`12_imss.py`) for launch, board, logs, and summary
 
-Yes, models can be updated with newer daily data.
+Common commands:
 
-Current implementation:
-
-- rerun training with overwrite enabled
-- retrain from scratch on the latest available history
-- replace the old artifact
-
-This is not incremental online learning yet.
+```bash
+python3 scripts/imss_seed_data.py
+python3 scripts/imss_run_backtest.py --stock BBRI --start 2024-07-01 --end 2024-09-30 --runs 2
+python3 scripts/imss_smoke_test.py
+```
 
 ## Testing
 
-Python tests:
+Python:
 
 ```bash
 pytest -q
 ```
 
-Targeted examples:
+Focused suites:
 
 ```bash
 pytest -q tests/integration/test_prediction_api.py
-pytest -q tests/dashboard/test_components.py
+pytest -q tests/integration/test_backtest_api.py
+pytest -q tests/integration/test_autoresearch_glm.py
+pytest -q tests/imss/
 ```
 
 Playwright:
@@ -189,9 +215,10 @@ npx playwright test
 
 ## Notes
 
-- `Virtual Trading` is a beta paper-trading workflow, not a broker-connected execution system
-- Some advanced modules still depend on external data quality and artifact availability
-- Streamlit page transitions can still show brief shell repaint behavior because this is a multipage Streamlit app, not a SPA frontend
+- Virtual trading is paper-trading only (no broker-connected live execution)
+- Market data assumptions are daily-cycle oriented
+- ML inference depends on trained artifacts per symbol
+- Model refresh is retrain-and-replace, not incremental online learning
 
 ## License
 
